@@ -1,945 +1,626 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>PremiumPaidAdz</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"/>
-  <style>
-    :root {
-      /* BDwin24 Blue Palette — extracted from screenshot */
-      --blue-1: #0A1628;
-      --blue-2: #0D1F3C;
-      --blue-3: #112952;
-      --blue-4: #1A3A6E;
-      --blue-5: #1E4D99;
-      --accent:  #3D8EFF;
-      --accent2: #60AAFF;
-      --glow:    rgba(61,142,255,0.35);
-      --glow2:   rgba(96,170,255,0.18);
-      --cyan:    #4DC8FF;
-      --white:   #FFFFFF;
-      --txt1:    #E8F0FF;
-      --txt2:    #7A9CC8;
-      --txt3:    #4A6A9A;
-      --brd:     rgba(61,142,255,0.15);
-      --brd2:    rgba(61,142,255,0.28);
-      --ok:      #22D97A;
-      --err:     #FF4D6A;
-      --warn:    #FFB347;
-      --ff: 'Outfit', sans-serif;
-      --fm: 'JetBrains Mono', monospace;
-      --r: 16px;
-      --r2: 12px;
-    }
-
-    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
-
-    body {
-      font-family: var(--ff);
-      background: var(--blue-1);
-      color: var(--txt1);
-      -webkit-font-smoothing: antialiased;
-      min-height: 100vh;
-      overflow-x: hidden;
-    }
-
-    /* ── Animated mesh background ── */
-    body::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background:
-        radial-gradient(ellipse 80% 50% at 50% -10%, rgba(29,74,160,0.45) 0%, transparent 70%),
-        radial-gradient(ellipse 40% 40% at 85% 30%, rgba(61,142,255,0.12) 0%, transparent 60%),
-        radial-gradient(ellipse 40% 40% at 10% 70%, rgba(77,200,255,0.08) 0%, transparent 60%),
-        repeating-linear-gradient(
-          -45deg,
-          transparent,
-          transparent 28px,
-          rgba(61,142,255,0.025) 28px,
-          rgba(61,142,255,0.025) 29px
-        );
-      pointer-events: none;
-      z-index: 0;
-    }
-
-    #app { max-width: 500px; margin: 0 auto; padding-bottom: 88px; position: relative; z-index: 1; }
-    .page { display: none; padding: 16px; animation: pageIn .35s cubic-bezier(.4,0,.2,1); }
-    .page.active { display: block; }
-
-    @keyframes pageIn {
-      from { opacity:0; transform: translateY(18px); }
-      to   { opacity:1; transform: translateY(0); }
-    }
-
-    /* ── Loader ── */
-    #app-loader {
-      position: fixed; inset: 0; z-index: 9999;
-      background: var(--blue-1);
-      display: flex; flex-direction: column;
-      justify-content: center; align-items: center; gap: 20px;
-    }
-
-    .loader-logo {
-      font-size: 1.6rem; font-weight: 800; letter-spacing: -0.5px;
-      background: linear-gradient(135deg, var(--accent), var(--cyan));
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      background-clip: text;
-      filter: drop-shadow(0 0 16px var(--glow));
-      animation: logoPulse 1.8s ease-in-out infinite;
-    }
-    @keyframes logoPulse {
-      0%,100% { filter: drop-shadow(0 0 12px var(--glow)); }
-      50%      { filter: drop-shadow(0 0 28px rgba(61,142,255,0.7)); }
-    }
-
-    .loader-track {
-      width: 180px; height: 3px; background: var(--brd);
-      border-radius: 99px; overflow: hidden;
-    }
-    .loader-fill {
-      height: 100%; background: linear-gradient(90deg, var(--accent), var(--cyan));
-      border-radius: 99px;
-      box-shadow: 0 0 10px var(--glow);
-      transition: width .3s ease;
-    }
-    #load-pct { font-size: .82rem; color: var(--txt2); font-family: var(--fm); }
-
-    /* ── Profile Header ── */
-    .profile-header {
-      padding: 20px 16px 18px;
-      background: linear-gradient(160deg, var(--blue-3) 0%, var(--blue-2) 100%);
-      border-bottom: 1px solid var(--brd);
-      display: flex; flex-direction: column; align-items: center; text-align: center;
-      position: relative; overflow: hidden;
-    }
-    .profile-header::before {
-      content: '';
-      position: absolute; top: -40px; left: 50%; transform: translateX(-50%);
-      width: 220px; height: 120px;
-      background: radial-gradient(ellipse, rgba(61,142,255,0.25) 0%, transparent 70%);
-    }
-
-    #user-photo {
-      width: 72px; height: 72px; border-radius: 50%; object-fit: cover;
-      border: 2px solid var(--accent);
-      box-shadow: 0 0 0 4px var(--glow2), 0 0 24px var(--glow);
-      margin-bottom: 10px; position: relative; z-index: 1;
-    }
-    #user-name {
-      font-size: 1.2rem; font-weight: 700; letter-spacing: -0.3px;
-      position: relative; z-index: 1;
-    }
-    #user-balance-container {
-      margin-top: 6px; font-size: .82rem; color: var(--txt2);
-      position: relative; z-index: 1;
-    }
-    #user-balance {
-      font-size: 1.3rem; font-weight: 800; font-family: var(--fm);
-      background: linear-gradient(90deg, var(--accent), var(--cyan));
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      background-clip: text;
-      filter: drop-shadow(0 0 8px var(--glow));
-    }
-
-    /* ── Glowing Card ── */
-    .glass-card {
-      background: linear-gradient(145deg, rgba(17,41,82,0.85), rgba(13,31,60,0.90));
-      border: 1px solid var(--brd);
-      border-radius: var(--r);
-      backdrop-filter: blur(12px);
-      position: relative;
-      overflow: hidden;
-      transition: border-color .25s, box-shadow .25s;
-    }
-    .glass-card::before {
-      content: '';
-      position: absolute; top: 0; left: 0; right: 0; height: 1px;
-      background: linear-gradient(90deg, transparent, var(--accent2), transparent);
-      opacity: 0.5;
-    }
-    .glass-card:hover {
-      border-color: var(--brd2);
-      box-shadow: 0 0 20px var(--glow2);
-    }
-
-    /* ── Stats Grid ── */
-    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 16px 0; }
-
-    .stat-card {
-      padding: 14px; border-radius: var(--r2); text-align: center;
-      background: linear-gradient(145deg, rgba(17,41,82,0.85), rgba(13,31,60,0.90));
-      border: 1px solid var(--brd);
-      position: relative; overflow: hidden;
-      transition: transform .2s, box-shadow .2s;
-    }
-    .stat-card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 24px var(--glow2);
-    }
-    .stat-card::after {
-      content: '';
-      position: absolute; bottom: 0; left: 10%; right: 10%; height: 1px;
-      background: linear-gradient(90deg, transparent, var(--accent), transparent);
-      opacity: 0.3;
-    }
-    .stat-card h3 { font-size: .72rem; font-weight: 500; color: var(--txt2); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 8px; }
-    .stat-card p { font-size: 1.4rem; font-weight: 700; font-family: var(--fm);
-      background: linear-gradient(135deg, var(--accent), var(--cyan));
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-      filter: drop-shadow(0 0 6px var(--glow));
-    }
-
-    /* ── Chart ── */
-    .chart-container { padding: 18px; border-radius: var(--r); margin-top: 16px; }
-    .chart-container h3 { margin-bottom: 14px; font-size: .95rem; font-weight: 600; color: var(--txt1); display: flex; align-items: center; gap: 8px; }
-    .chart-container h3::before { content: ''; width: 3px; height: 16px; background: linear-gradient(to bottom, var(--accent), var(--cyan)); border-radius: 2px; display: inline-block; }
-    .chart {
-      display: flex; justify-content: space-around; align-items: flex-end;
-      height: 120px;
-      border-left: 1px solid var(--brd); border-bottom: 1px solid var(--brd);
-      padding-top: 8px; gap: 4px;
-    }
-    .bar {
-      flex: 1; max-width: 32px;
-      background: linear-gradient(to top, var(--accent), var(--cyan));
-      border-radius: 4px 4px 0 0;
-      position: relative; cursor: pointer; min-height: 3px;
-      box-shadow: 0 0 8px var(--glow2);
-      transition: box-shadow .2s, opacity .2s;
-    }
-    .bar:hover { box-shadow: 0 0 16px var(--glow), 0 0 32px var(--glow2); opacity: .9; }
-    .bar .tip {
-      position: absolute; top: -30px; left: 50%; transform: translateX(-50%);
-      background: var(--blue-4); color: var(--accent2);
-      padding: 3px 7px; border-radius: 6px; font-size: .7rem; font-family: var(--fm);
-      white-space: nowrap; opacity: 0; transition: opacity .2s;
-      pointer-events: none; border: 1px solid var(--brd2);
-    }
-    .bar:hover .tip { opacity: 1; }
-    .chart-labels { display: flex; justify-content: space-around; font-size: .66rem; margin-top: 6px; color: var(--txt3); font-family: var(--fm); }
-
-    /* ── Earning Wallet Card ── */
-    .earning-wallet-card { padding: 20px; border-radius: var(--r); margin-bottom: 14px; }
-    .earning-wallet-card h3 { font-size: .8rem; font-weight: 500; color: var(--txt2); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 4px; }
-    .earning-wallet-card .big-amt {
-      font-size: 2.2rem; font-weight: 800; font-family: var(--fm); margin: 8px 0 4px;
-      background: linear-gradient(90deg, var(--accent), var(--cyan));
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-      filter: drop-shadow(0 0 12px var(--glow));
-      line-height: 1.1;
-    }
-    .earning-wallet-card small { font-size: .78rem; color: var(--txt3); }
-
-    /* ── Progress Bar ── */
-    .progress-wrap { margin: 14px 0; }
-    .prog-info { display: flex; justify-content: space-between; font-size: .8rem; font-weight: 500; margin-bottom: 8px; color: var(--txt2); }
-    .prog-info span:last-child { font-family: var(--fm); color: var(--accent); }
-    .prog-bg { width: 100%; height: 6px; border-radius: 99px; background: rgba(61,142,255,0.12); }
-    .prog-fg {
-      height: 100%; border-radius: 99px;
-      background: linear-gradient(90deg, var(--accent), var(--cyan));
-      box-shadow: 0 0 10px var(--glow), 0 0 20px var(--glow2);
-      transition: width .5s cubic-bezier(.4,0,.2,1);
-    }
-
-    /* ── Task Card ── */
-    .task-card {
-      padding: 14px 16px; border-radius: var(--r2); margin-bottom: 10px;
-      display: flex; align-items: center; gap: 14px;
-      background: linear-gradient(145deg, rgba(17,41,82,0.85), rgba(13,31,60,0.90));
-      border: 1px solid var(--brd);
-      transition: border-color .2s, box-shadow .2s;
-    }
-    .task-card:hover { border-color: var(--brd2); box-shadow: 0 0 16px var(--glow2); }
-
-    .task-icon {
-      width: 42px; height: 42px; border-radius: 10px; object-fit: cover; flex-shrink: 0;
-      border: 1px solid var(--brd2);
-      box-shadow: 0 0 10px var(--glow2);
-    }
-    .task-info { flex: 1; min-width: 0; }
-    .task-info h3 { font-size: .95rem; font-weight: 600; color: var(--txt1); margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .task-info p { font-size: .78rem; color: var(--txt2); }
-
-    /* ── Section Title ── */
-    .section-title {
-      font-size: .8rem; font-weight: 600; color: var(--txt2); text-transform: uppercase;
-      letter-spacing: 1.2px; margin: 20px 0 12px;
-      display: flex; align-items: center; gap: 10px;
-    }
-    .section-title::after { content: ''; flex: 1; height: 1px; background: var(--brd); }
-
-    /* ── Action Button ── */
-    .action-btn {
-      padding: 9px 16px; font-size: .82rem; font-weight: 600; color: var(--blue-1);
-      border: none; border-radius: 8px; cursor: pointer;
-      background: linear-gradient(135deg, var(--accent), var(--cyan));
-      transition: box-shadow .2s, transform .15s, opacity .2s;
-      white-space: nowrap; margin-left: auto; flex-shrink: 0;
-      font-family: var(--ff); letter-spacing: .3px;
-      box-shadow: 0 0 12px var(--glow2);
-      position: relative; overflow: hidden;
-    }
-    .action-btn::after {
-      content: '';
-      position: absolute; inset: 0;
-      background: linear-gradient(180deg, rgba(255,255,255,0.15), transparent);
-    }
-    .action-btn:hover {
-      box-shadow: 0 0 20px var(--glow), 0 4px 16px var(--glow2);
-      transform: translateY(-1px);
-    }
-    .action-btn:active { transform: translateY(0); opacity: .9; }
-    .action-btn:disabled {
-      background: linear-gradient(135deg, #1e3a5f, #1a2e4a);
-      color: var(--txt3); cursor: not-allowed;
-      box-shadow: none; transform: none;
-    }
-    .action-btn.wide { width: 100%; margin: 12px 0 0; padding: 13px; font-size: .9rem; }
-
-    /* ── Links Container ── */
-    #links-container { margin-top: 16px; }
-
-    /* ── Leaderboard ── */
-    .lb-toggle {
-      display: flex; margin-bottom: 16px;
-      background: rgba(10,22,40,0.6); border-radius: var(--r2);
-      padding: 4px; border: 1px solid var(--brd); gap: 4px;
-    }
-    .lb-btn {
-      flex: 1; padding: 9px 12px; border: none; border-radius: 9px;
-      background: transparent; color: var(--txt2);
-      font-family: var(--ff); font-size: .85rem; cursor: pointer; font-weight: 500;
-      transition: background .2s, color .2s, box-shadow .2s;
-    }
-    .lb-btn.active {
-      background: linear-gradient(135deg, var(--accent), var(--accent2));
-      color: var(--blue-1); font-weight: 700;
-      box-shadow: 0 0 14px var(--glow);
-    }
-    .lb-list { list-style: none; }
-    .lb-item {
-      display: flex; align-items: center; padding: 12px 14px;
-      margin-bottom: 8px; border-radius: var(--r2); gap: 12px;
-      background: linear-gradient(145deg, rgba(17,41,82,0.8), rgba(13,31,60,0.85));
-      border: 1px solid var(--brd);
-      transition: border-color .2s, box-shadow .2s;
-    }
-    .lb-item:hover { border-color: var(--brd2); box-shadow: 0 0 12px var(--glow2); }
-    .lb-item:first-child { border-color: rgba(255,191,0,0.3); box-shadow: 0 0 16px rgba(255,191,0,0.1); }
-    .lb-rank { font-size: 1rem; font-weight: 700; color: var(--txt3); width: 30px; font-family: var(--fm); }
-    .lb-item:nth-child(1) .lb-rank { color: #FFD700; filter: drop-shadow(0 0 6px rgba(255,215,0,0.5)); }
-    .lb-item:nth-child(2) .lb-rank { color: #C0C0C0; }
-    .lb-item:nth-child(3) .lb-rank { color: #CD7F32; }
-    .lb-item img { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; border: 1px solid var(--brd2); }
-    .lb-name { flex: 1; font-weight: 600; font-size: .9rem; }
-    .lb-score {
-      font-weight: 700; font-family: var(--fm);
-      background: linear-gradient(90deg, var(--accent), var(--cyan));
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-    }
-
-    /* ── History ── */
-    .hist-item {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 14px 16px; border-radius: var(--r2); margin-bottom: 8px;
-      background: linear-gradient(145deg, rgba(17,41,82,0.8), rgba(13,31,60,0.85));
-      border: 1px solid var(--brd);
-    }
-    .hist-item p { font-weight: 600; margin: 0 0 3px; font-size: .9rem; }
-    .hist-item small { font-size: .75rem; color: var(--txt3); font-family: var(--fm); }
-    .badge {
-      padding: 4px 10px; border-radius: 20px; font-size: .72rem; font-weight: 700;
-      letter-spacing: .5px; text-transform: uppercase;
-    }
-    .badge-completed { background: rgba(34,217,122,0.15); color: var(--ok); border: 1px solid rgba(34,217,122,0.3); }
-    .badge-pending   { background: rgba(255,179,71,0.15);  color: var(--warn); border: 1px solid rgba(255,179,71,0.3); }
-    .badge-rejected  { background: rgba(255,77,106,0.15);  color: var(--err);  border: 1px solid rgba(255,77,106,0.3); }
-
-    /* ── Form Block ── */
-    .form-block {
-      padding: 20px; border-radius: var(--r); margin-bottom: 14px;
-      display: flex; flex-direction: column; gap: 14px;
-    }
-    .form-block h3 { font-size: 1rem; font-weight: 700; }
-    .form-block label { font-size: .78rem; font-weight: 500; display: block; margin-bottom: 6px; color: var(--txt2); text-transform: uppercase; letter-spacing: .6px; }
-    .form-block input, .form-block select {
-      width: 100%; padding: 11px 14px;
-      border: 1px solid var(--brd); border-radius: 9px;
-      font-family: var(--ff); font-size: .9rem;
-      background: rgba(10,22,40,0.7); color: var(--txt1);
-      transition: border-color .2s, box-shadow .2s;
-    }
-    .form-block input::placeholder { color: var(--txt3); }
-    .form-block select option { background: var(--blue-2); }
-    .form-block input:focus, .form-block select:focus {
-      outline: none; border-color: var(--accent);
-      box-shadow: 0 0 0 3px var(--glow2), 0 0 12px var(--glow2);
-    }
-    .form-notice {
-      font-size: .8rem; text-align: center; color: var(--txt2); line-height: 1.5;
-      background: rgba(255,179,71,0.08); border: 1px solid rgba(255,179,71,0.2);
-      padding: 10px 14px; border-radius: 8px;
-    }
-
-    /* ── Referral Card ── */
-    .ref-card { padding: 20px; border-radius: var(--r); margin-bottom: 14px; }
-    .ref-card h3 { margin-bottom: 4px; font-size: 1rem; font-weight: 700; }
-    .ref-card p { font-size: .82rem; color: var(--txt2); margin-bottom: 12px; line-height: 1.5; }
-    .ref-input {
-      width: 100%; padding: 10px 14px; text-align: center;
-      border-radius: 9px; border: 1px dashed var(--brd2);
-      background: rgba(10,22,40,0.6); color: var(--accent2);
-      font-family: var(--fm); font-size: .78rem; margin-bottom: 10px;
-    }
-
-    /* ── Popup ── */
-    .popup-overlay {
-      position: fixed; inset: 0; background: rgba(5,12,26,0.85);
-      backdrop-filter: blur(6px);
-      display: none; justify-content: center; align-items: center; z-index: 10000;
-    }
-    .popup-box {
-      padding: 28px 24px; border-radius: var(--r); text-align: center;
-      max-width: 88%; width: 340px;
-      background: linear-gradient(145deg, var(--blue-3), var(--blue-2));
-      border: 1px solid var(--brd2);
-      box-shadow: 0 0 40px var(--glow), 0 24px 60px rgba(0,0,0,0.5);
-      animation: popIn .25s cubic-bezier(.34,1.56,.64,1);
-    }
-    @keyframes popIn {
-      from { transform: scale(.88); opacity:0; }
-      to   { transform: scale(1);   opacity:1; }
-    }
-    .popup-box h2 {
-      margin-bottom: 10px; font-size: 1.15rem;
-      background: linear-gradient(90deg, var(--accent), var(--cyan));
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-    }
-    .popup-box p { margin-bottom: 20px; font-size: .9rem; color: var(--txt2); line-height: 1.5; }
-    .popup-close {
-      padding: 10px 28px; border: none; border-radius: 9px; cursor: pointer;
-      background: linear-gradient(135deg, var(--accent), var(--cyan));
-      color: var(--blue-1); font-family: var(--ff); font-weight: 700; font-size: .9rem;
-      box-shadow: 0 0 16px var(--glow);
-    }
-    .popup-spin { margin-bottom: 14px; }
-
-    /* ── Spinner ── */
-    .spinner {
-      width: 38px; height: 38px; border-radius: 50%; margin: 0 auto;
-      border: 3px solid rgba(61,142,255,0.15);
-      border-top-color: var(--accent);
-      box-shadow: 0 0 14px var(--glow2);
-      animation: spin 1s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* ── Bottom Nav ── */
-    .bottom-nav {
-      position: fixed; bottom: 0; left: 0; right: 0;
-      max-width: 500px; margin: 0 auto;
-      display: flex;
-      background: rgba(10,22,40,0.92);
-      backdrop-filter: blur(20px) saturate(1.5);
-      border-top: 1px solid var(--brd);
-      z-index: 1000;
-      padding-bottom: env(safe-area-inset-bottom, 0px);
-    }
-    .nav-btn {
-      flex: 1; background: none; border: none; cursor: pointer;
-      display: flex; flex-direction: column; align-items: center;
-      padding: 10px 0 8px; font-family: var(--ff); font-size: .68rem; font-weight: 500;
-      color: var(--txt3); gap: 4px; transition: color .2s;
-      position: relative;
-    }
-    .nav-btn i { font-size: 1.25rem; transition: filter .2s, transform .2s; }
-    .nav-btn.active { color: var(--accent); }
-    .nav-btn.active i {
-      filter: drop-shadow(0 0 8px var(--glow));
-      transform: translateY(-1px);
-    }
-    .nav-btn.active::before {
-      content: '';
-      position: absolute; top: 0; left: 20%; right: 20%; height: 2px;
-      background: linear-gradient(90deg, transparent, var(--accent), transparent);
-      border-radius: 0 0 4px 4px;
-    }
-
-    /* ── Glowing pill badge on nav ── */
-    .nav-badge {
-      position: absolute; top: 7px; right: calc(50% - 14px);
-      background: var(--err); color: #fff;
-      font-size: .58rem; font-weight: 700;
-      width: 16px; height: 16px; border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      box-shadow: 0 0 8px rgba(255,77,106,0.6);
-    }
-
-    /* ── Decorative glow orb ── */
-    .glow-orb {
-      position: absolute; border-radius: 50%;
-      pointer-events: none; z-index: 0;
-    }
-  </style>
-</head>
-<body>
-
-<!-- Loader -->
-<div id="app-loader">
-  <div class="loader-logo">PremiumPaidAdz</div>
-  <div class="loader-track"><div class="loader-fill" id="loader-fill" style="width:0%"></div></div>
-  <p id="load-pct">0%</p>
-</div>
-
-<!-- Popup -->
-<div id="popup" class="popup-overlay">
-  <div class="popup-box" id="popup-box"></div>
-</div>
-
-<div id="app" style="display:none">
-  <header class="profile-header">
-    <img id="user-photo" src="https://via.placeholder.com/80" alt="">
-    <h1 id="user-name">Загрузка...</h1>
-    <div id="user-balance-container">Основной баланс: <span id="user-balance">0,00</span> ₽</div>
-  </header>
-
-  <main>
-    <!-- HOME -->
-    <div id="home-page" class="page active">
-      <div class="stats-grid">
-        <div class="stat-card"><h3>Реклама сегодня</h3><p id="daily-ads">0 / 0</p></div>
-        <div class="stat-card"><h3>Рефералы</h3><p id="ref-count">0</p></div>
-        <div class="stat-card"><h3>Всего просмотров</h3><p id="total-ads">0</p></div>
-        <div class="stat-card"><h3>Общий доход</h3><p id="total-earned">0,00 ₽</p></div>
-      </div>
-      <div class="chart-container glass-card">
-        <h3>Доход за 7 дней</h3>
-        <div id="earnings-chart" class="chart"></div>
-        <div id="earnings-labels" class="chart-labels"></div>
-      </div>
-      <div id="links-container"></div>
-    </div>
-
-    <!-- TASKS -->
-    <div id="tasks-page" class="page">
-      <div class="earning-wallet-card glass-card">
-        <h3>Кошелёк заработка</h3>
-        <div class="big-amt"><span id="ew-balance">0,00</span> ₽</div>
-        <small>Минимум 100 ₽ для перевода на основной баланс.</small>
-        <button id="move-btn" class="action-btn wide" disabled>Перевести на основной баланс</button>
-      </div>
-      <div id="ad-progress"></div>
-      <div id="ad-task"></div>
-      <div class="section-title">Бонусные задания</div>
-      <div id="bonus-tasks"></div>
-    </div>
-
-    <!-- LEADERBOARD -->
-    <div id="leaderboard-page" class="page">
-      <div class="section-title" style="margin-top:4px">Рейтинг</div>
-      <div class="lb-toggle">
-        <button class="lb-btn active" data-board="referral">Топ рефереров</button>
-        <button class="lb-btn" data-board="earning">Топ заработка</button>
-      </div>
-      <div id="lb-referral"><ul class="lb-list" id="lb-ref-list"></ul></div>
-      <div id="lb-earning" style="display:none"><ul class="lb-list" id="lb-earn-list"></ul></div>
-    </div>
-
-    <!-- PROFILE -->
-    <div id="profile-page" class="page">
-      <div id="ref-section"></div>
-      <div id="withdraw-section"></div>
-      <div class="section-title">История выводов</div>
-      <div id="history-list"></div>
-    </div>
-  </main>
-
-  <nav class="bottom-nav">
-    <button class="nav-btn active" data-page="home-page"><i class="fas fa-house"></i><span>Главная</span></button>
-    <button class="nav-btn" data-page="tasks-page"><i class="fas fa-bolt"></i><span>Задания</span></button>
-    <button class="nav-btn" data-page="leaderboard-page"><i class="fas fa-trophy"></i><span>Рейтинг</span></button>
-    <button class="nav-btn" data-page="profile-page"><i class="fas fa-user"></i><span>Профиль</span></button>
-  </nav>
-</div>
-
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>SMM Panel</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<script>
-document.addEventListener('DOMContentLoaded', () => {
-  const tg = window.Telegram.WebApp;
-  tg.ready(); tg.expand();
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F3F2FA; --card:#FFFFFF; --text:#161826; --text-dim:#8D90A6;
+    --navy:#1C1F35; --border: rgba(20,20,40,0.06);
+    --violet:#8B5CF6; --violet-dk:#6D28D9;
+    --lime:#D8F16B; --lime-txt:#38430F;
+    --pink:#FF8FB8; --sky:#4FC3FF; --orange:#FFB459; --teal:#4CE0C0;
+    --green:#22C55E; --red:#EF4444;
+  }
+  .dark{
+    --bg:#0F111C; --card:#171A2B; --text:#F1F2FA; --text-dim:#8489A6;
+    --navy:#0B0D18; --border: rgba(255,255,255,0.07);
+  }
+  *{ box-sizing:border-box; }
+  html,body{ background:var(--bg); }
+  body{ font-family:'Inter',sans-serif; color:var(--text); -webkit-tap-highlight-color:transparent; overscroll-behavior-y:none; }
+  h1,h2,h3,.display{ font-family:'Baloo 2',sans-serif; }
+  .card{ background:var(--card); border:1px solid var(--border); }
+  .page{ display:none; animation:fadein .35s ease; }
+  .page.active{ display:block; }
+  @keyframes fadein{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;} }
+  ::-webkit-scrollbar{ display:none; }
 
-  let tgUser = tg.initDataUnsafe?.user || { id: 0, first_name: 'Гость' };
-  let appCfg = {}, userState = {}, leaderboard = { referral:[], earning:[] }, userHistory = [];
-  const BASE = '';
+  .hero{
+    background: linear-gradient(150deg,#FF9B6A 0%, #FF6FA5 45%, #8B6BFF 100%);
+    position:relative; overflow:hidden;
+  }
+  .hero::before{
+    content:''; position:absolute; inset:0;
+    background: radial-gradient(60% 50% at 20% 10%, rgba(255,255,255,.35), transparent 60%);
+  }
 
-  // ── helpers ──────────────────────────────────────────────
-  const fmt = n => Number(n||0).toFixed(2).replace('.',',');
+  .stat-card{ border-radius:22px; padding:14px; position:relative; overflow:hidden; }
+  .stat-card .icon{ position:absolute; right:8px; top:8px; font-size:34px; opacity:.28; }
+  .stat-purple{ background:linear-gradient(150deg,#9C7BFF,#7C4DFF); color:#fff; }
+  .stat-lime{ background:linear-gradient(150deg,#E4FA82,#C9EE4C); color:#38430F; }
+  .stat-pink{ background:linear-gradient(150deg,#FFA9C6,#FF7CA6); color:#fff; }
+  .stat-sky{ background:linear-gradient(150deg,#7ED8FF,#40BFFA); color:#08324A; }
+  .stat-orange{ background:linear-gradient(150deg,#FFCB80,#FFAE4C); color:#4A2E06; }
+  .stat-teal{ background:linear-gradient(150deg,#7EF0D6,#3FDDBB); color:#053B30; }
 
-  const setPct = n => {
-    document.getElementById('load-pct').textContent = n+'%';
-    document.getElementById('loader-fill').style.width = n+'%';
-  };
+  .chip{ font-size:12.5px; font-weight:600; padding:8px 14px; border-radius:999px; white-space:nowrap; background:var(--card); border:1px solid var(--border); color:var(--text-dim); }
+  .chip.active{ background:var(--navy); color:#fff; border-color:var(--navy); }
 
-  const popup = document.getElementById('popup');
-  const popupBox = document.getElementById('popup-box');
-  const showPopup = html => { popupBox.innerHTML = html; popup.style.display='flex'; };
-  const closePopup = () => { popup.style.display='none'; };
-  popup.addEventListener('click', e => {
-    if (e.target === popup || e.target.classList.contains('popup-close')) closePopup();
-  });
+  .balance-pill{ background:var(--navy); color:#fff; border-radius:999px; padding:8px 14px; display:flex; align-items:center; gap:6px; font-weight:700; font-size:14px; }
+  .topup-pill{ background:#fff; color:var(--navy); border-radius:999px; padding:8px 14px; font-weight:700; font-size:13px; }
 
-  const api = async (method, path, body) => {
-    const opts = { method: method||'GET', headers:{'Content-Type':'application/json'} };
-    if (body) opts.body = JSON.stringify(body);
-    const r = await fetch(BASE+path, opts);
-    return r.json();
-  };
+  .svc-thumb{ width:52px; height:52px; border-radius:16px; display:flex; align-items:center; justify-content:center; font-size:22px; flex-shrink:0; }
+  .badge{ font-size:10.5px; font-weight:600; padding:2px 8px; border-radius:999px; background:var(--bg); color:var(--text-dim); }
 
-  const loadAdSdk = id => {
-    if (!id || document.querySelector(`script[data-zone='${id}']`)) return;
-    const s = document.createElement('script');
-    s.src = '//libtl.com/sdk.js';
-    s.setAttribute('data-zone', id);
-    s.setAttribute('data-sdk', `show_${id}`);
-    s.async = true;
-    document.body.appendChild(s);
-  };
+  .status-pill{ font-size:11px; font-weight:700; padding:3px 10px; border-radius:999px; }
+  .st-pending{ background:rgba(245,158,11,.15); color:#F59E0B; }
+  .st-in_progress{ background:rgba(79,195,255,.18); color:#0C87C7; }
+  .st-completed{ background:rgba(34,197,94,.15); color:#22C55E; }
+  .st-cancelled{ background:rgba(239,68,68,.15); color:#EF4444; }
+  .st-partial{ background:rgba(139,92,246,.15); color:#8B5CF6; }
 
-  // ── init ─────────────────────────────────────────────────
-  const initApp = async () => {
-    try {
-      setPct(10);
-      appCfg = await api('GET', '/api/config');
-      setPct(30);
+  .navbar{ background:var(--card); border-top:1px solid var(--border); }
+  .navitem{ display:flex; flex-direction:column; align-items:center; gap:3px; padding:8px 0; flex:1; color:var(--text-dim); position:relative; }
+  .navitem.active{ color:var(--violet); font-weight:700; }
+  .navitem.active::after{ content:''; position:absolute; bottom:0; width:22px; height:3px; border-radius:99px; background:var(--violet); }
 
-      const startParam = tg.initDataUnsafe?.start_param;
-      const refId = (startParam && !isNaN(startParam)) ? startParam : null;
-      userState = await api('POST', '/api/user/init', { user: tgUser, referralId: refId });
-      setPct(55);
+  input, select, textarea{ background:var(--bg); border:1px solid var(--border); color:var(--text); }
+  input::placeholder{ color:var(--text-dim); }
+  .btn-primary{ background:linear-gradient(135deg,var(--violet),#5B8CFF); }
+  .btn-order{ background:#3E7BFA; }
 
-      [leaderboard] = await Promise.all([
-        api('GET', '/api/leaderboard'),
-        loadEarningsChart(),
-        loadHistory(),
-      ]);
-      setPct(85);
+  .toast{
+    position:fixed; left:50%; bottom:92px; transform:translateX(-50%) translateY(20px);
+    background:var(--navy); color:#fff; padding:10px 18px; border-radius:14px; font-size:13px;
+    opacity:0; pointer-events:none; transition:all .25s ease; z-index:60; box-shadow:0 10px 30px rgba(0,0,0,.25);
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
 
-      loadAdSdk(appCfg.adZoneId);
-      renderUI();
-      setupNav();
-      setupEvents();
-      setPct(100);
+  .details-row{ max-height:0; overflow:hidden; transition:max-height .25s ease; }
+  .details-row.open{ max-height:300px; }
+</style>
+</head>
+<body class="min-h-screen pb-24 max-w-md mx-auto relative">
 
-      setTimeout(() => {
-        document.getElementById('app-loader').style.display='none';
-        document.getElementById('app').style.display='block';
-        if (appCfg.welcomeMessage && !userState.welcomed) {
-          showPopup(`<h2>Добро пожаловать!</h2><p>${appCfg.welcomeMessage}</p><button class="popup-close">Продолжить</button>`);
-          api('POST', '/api/user/welcomed', { userId: tgUser.id });
-        }
-      }, 320);
-    } catch(e) {
-      console.error(e);
-      tg.showAlert('Ошибка загрузки. Попробуйте снова.');
-    }
-  };
-
-  const loadHistory = async () => {
-    userHistory = await api('GET', `/api/user/history?userId=${tgUser.id}`);
-    userHistory.sort((a,b) => b.created_at - a.created_at);
-  };
-
-  // ── render UI ─────────────────────────────────────────────
-  const renderUI = () => {
-    document.getElementById('user-photo').src = userState.photo_url || 'https://via.placeholder.com/80';
-    document.getElementById('user-name').textContent = `${userState.first_name||''} ${userState.last_name||''}`.trim();
-    document.getElementById('user-balance').textContent = fmt(userState.balance);
-    document.getElementById('daily-ads').textContent = `${userState.daily_ad_count||0} / ${appCfg.dailyAdLimit||0}`;
-    document.getElementById('ref-count').textContent = userState.referrals||0;
-    document.getElementById('total-ads').textContent = userState.lifetime_ad_count||0;
-    document.getElementById('total-earned').textContent = fmt(userState.total_earned)+' ₽';
-    document.getElementById('ew-balance').textContent = fmt(userState.earning_wallet);
-    document.getElementById('move-btn').disabled = (userState.earning_wallet||0) < 100;
-    renderAdProgress(); renderAdTask(); renderBonusTasks();
-    renderRefSection(); renderWithdrawSection(); renderLinks();
-  };
-
-  const renderAdProgress = () => {
-    const lim = appCfg.dailyAdLimit||1, w = (userState.daily_ad_count||0)/lim*100;
-    document.getElementById('ad-progress').innerHTML =
-      `<div class="progress-wrap">
-        <div class="prog-info"><span>Прогресс рекламы</span><span>${userState.daily_ad_count||0} / ${lim}</span></div>
-        <div class="prog-bg"><div class="prog-fg" style="width:${w}%"></div></div>
-      </div>`;
-  };
-
-  const renderAdTask = () => {
-    const now = Date.now(), onBreak = userState.break_until && now < userState.break_until;
-    const limitHit = (userState.daily_ad_count||0) >= (appCfg.dailyAdLimit||0);
-    let html='';
-    if (onBreak) {
-      const mins = Math.ceil((userState.break_until - now)/60000);
-      html = card('https://img.icons8.com/ios-filled/100/3D8EFF/hourglass.png','Перерыв!',
-        `Подождите ещё ${mins} мин.`,'Ждём','',true);
-    } else if (limitHit) {
-      html = card('https://img.icons8.com/ios-filled/100/3D8EFF/stop-circled.png','Лимит исчерпан',
-        'Приходите завтра за новой рекламой.','Лимит','',true);
-    } else {
-      html = card('https://img.icons8.com/ios-filled/100/3D8EFF/play-button-circled.png','Посмотреть рекламу',
-        `Получите ${fmt(appCfg.adValue)} ₽ за каждый просмотр.`,'Смотреть','watch-ad-btn',false);
-    }
-    document.getElementById('ad-task').innerHTML = html;
-    if (!onBreak && !limitHit)
-      document.getElementById('watch-ad-btn')?.addEventListener('click', handleWatchAd);
-  };
-
-  const card = (icon, title, desc, btnTxt, btnId, disabled) =>
-    `<div class="task-card">
-      <img class="task-icon" src="${icon}" alt="">
-      <div class="task-info"><h3>${title}</h3><p>${desc}</p></div>
-      <button class="action-btn"${btnId?' id="'+btnId+'"':''}${disabled?' disabled':''}>
-        ${btnTxt}</button>
-    </div>`;
-
-  const renderBonusTasks = () => {
-    const c = document.getElementById('bonus-tasks'); c.innerHTML='';
-    if (!appCfg.tasks) return;
-    const tasks = Object.entries(appCfg.tasks).reverse();
-    tasks.forEach(([key, t]) => {
-      const done = userState.completedTasks?.[key];
-      const el = document.createElement('div'); el.className='task-card';
-      el.innerHTML=`<img class="task-icon" src="${t.icon}" alt="">
-        <div class="task-info"><h3>${t.name}</h3><p>Получите ${fmt(t.reward)} ₽</p></div>
-        <button class="action-btn" data-task="${key}" data-url="${t.url}" ${done?'disabled':''}>${done?'Получено':'Забрать'}</button>`;
-      c.appendChild(el);
-    });
-  };
-
-  const renderLinks = () => {
-    const c = document.getElementById('links-container'); c.innerHTML='';
-    if (!appCfg.links) return;
-    Object.entries(appCfg.links).reverse().forEach(([,l]) => {
-      const el=document.createElement('div'); el.className='task-card';
-      el.style.marginTop='10px';
-      el.innerHTML=`<img class="task-icon" src="${l.icon}" alt="">
-        <div class="task-info"><h3>${l.name}</h3></div>
-        <button class="action-btn" onclick="tg.openLink('${l.url}')">Открыть</button>`;
-      c.appendChild(el);
-    });
-  };
-
-  const renderRefSection = () => {
-    const link = `https://t.me/${appCfg.botUsername}/app?startapp=${tgUser.id}`;
-    document.getElementById('ref-section').innerHTML =
-      `<div class="ref-card glass-card">
-        <h3>Пригласи и зарабатывай!</h3>
-        <p>Получайте <b style="color:var(--accent)">${fmt(appCfg.referralBonus)} ₽</b> за каждого реферала. Делитесь ссылкой и растите вместе!</p>
-        <input id="ref-link" class="ref-input" value="${link}" readonly>
-        <button id="copy-ref" class="action-btn wide">
-          <i class="fas fa-copy" style="margin-right:6px"></i>Скопировать ссылку
-        </button>
-      </div>`;
-  };
-
-  const renderWithdrawSection = () => {
-    let opts='';
-    (appCfg.withdrawMethods||[]).forEach(m => { opts+=`<option value="${m.name}">${m.name} (Мин: ${m.min} ₽)</option>`; });
-    const minRefs = appCfg.minimumWithdrawReferrals||0;
-    const notice = minRefs>0
-      ? `<p class="form-notice">⚠️ Для вывода нужно минимум <b>${minRefs} рефералов</b> (у вас: ${userState.referrals||0})</p>`
-      : '';
-    document.getElementById('withdraw-section').innerHTML=
-      `<form id="wd-form" class="form-block glass-card"><h3>Запрос на вывод</h3>${notice}
-       <div><label>Способ вывода</label><select id="wd-method">${opts}</select></div>
-       <div><label>Номер счёта / ID</label><input type="text" id="wd-acct" placeholder="Введите ваш счёт" required></div>
-       <div><label>Сумма (₽)</label><input type="number" step="any" id="wd-amount" placeholder="0.00" required></div>
-       <button type="submit" id="wd-btn" class="action-btn wide">
-         <i class="fas fa-paper-plane" style="margin-right:6px"></i>Отправить заявку
-       </button></form>`;
-  };
-
-  const renderLeaderboard = () => {
-    const board = document.querySelector('.lb-btn.active').dataset.board;
-    document.getElementById('lb-referral').style.display = board==='referral'?'block':'none';
-    document.getElementById('lb-earning').style.display  = board==='earning'?'block':'none';
-    const listId = board==='referral'?'lb-ref-list':'lb-earn-list';
-    const items  = leaderboard[board]||[];
-    const el     = document.getElementById(listId);
-    if (!items.length){el.innerHTML='<li style="color:var(--txt3);padding:14px;text-align:center">Нет данных</li>';return;}
-    el.innerHTML = items.map((u,i)=>{
-      const score = board==='referral' ? (u.referrals||0) : fmt(u.total_earned)+' ₽';
-      const medals = ['🥇','🥈','🥉'];
-      return `<li class="lb-item">
-        <span class="lb-rank">${medals[i]||'#'+(i+1)}</span>
-        <img src="${u.photo_url||'https://via.placeholder.com/38'}" alt="">
-        <span class="lb-name">${u.first_name||'—'}</span>
-        <span class="lb-score">${score}</span></li>`;
-    }).join('');
-  };
-
-  const renderHistory = () => {
-    const el = document.getElementById('history-list');
-    const statusMap = { pending:'badge-pending', completed:'badge-completed', rejected:'badge-rejected' };
-    const statusRu  = { pending:'Ожидает', completed:'Выполнен', rejected:'Отклонён' };
-    if (!userHistory.length) { el.innerHTML='<p style="color:var(--txt3);padding:14px;text-align:center">История пуста.</p>'; return; }
-    el.innerHTML = userHistory.map(h=>
-      `<div class="hist-item">
+  <!-- ============ HOME PAGE ============ -->
+  <section id="page-home" class="page active">
+    <div class="px-4 pt-5 pb-3 flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <div id="avatar" class="w-11 h-11 rounded-2xl bg-gradient-to-br from-violet-500 to-pink-400 flex items-center justify-center font-bold text-white display border-2 border-white/40">U</div>
         <div>
-          <p>${fmt(h.amount)} ₽ — ${h.method}</p>
-          <small>${new Date(h.created_at).toLocaleString('ru-RU')}</small>
+          <div class="font-bold display text-[14.5px] leading-tight" id="home-username">Loading…</div>
+          <div class="text-[11px]" style="color:var(--text-dim)" id="home-tgid">ID: —</div>
         </div>
-        <span class="badge ${statusMap[h.status]||''}">${statusRu[h.status]||h.status}</span>
-      </div>`).join('');
-  };
+      </div>
+      <button id="theme-toggle" class="w-9 h-9 rounded-full card flex items-center justify-center text-base">🌙</button>
+    </div>
 
-  const loadEarningsChart = async () => {
-    const data = await api('GET', `/api/user/earnings?userId=${tgUser.id}`);
-    const chart = document.getElementById('earnings-chart');
-    const labels = document.getElementById('earnings-labels');
-    chart.innerHTML=''; labels.innerHTML='';
-    const maxV = Math.max(...data.earnings, 1);
-    data.earnings.forEach((v,i) => {
-      const h = Math.max((v/maxV)*100, 2);
-      const day = new Date(data.dates[i]).toLocaleDateString('ru-RU',{day:'numeric'});
-      chart.innerHTML  += `<div class="bar" style="height:${h}%"><span class="tip">${fmt(v)} ₽</span></div>`;
-      labels.innerHTML += `<span>${day}</span>`;
-    });
-  };
+    <div class="px-4">
+      <div class="card rounded-3xl p-4 mb-4 shadow-sm">
+        <div class="flex items-center justify-between mb-4">
+          <div class="balance-pill">🪙 <span id="balance-amount">৳0.00</span></div>
+          <button onclick="goTo('addfund')" class="topup-pill">Top up</button>
+        </div>
+        <div class="text-[13px] font-bold display mb-2.5" style="color:var(--text-dim)">Statistics</div>
+        <div class="grid grid-cols-2 gap-2.5" id="stats-grid"></div>
+      </div>
 
-  // ── event handlers ─────────────────────────────────────
-  const handleWatchAd = async () => {
-    const now = Date.now();
-    if ((userState.daily_ad_count||0) >= (appCfg.dailyAdLimit||0)) {
-      tg.showAlert('Дневной лимит исчерпан.'); return;
-    }
-    if (userState.break_until && now < userState.break_until) {
-      tg.showAlert(`Подождите ещё ${Math.ceil((userState.break_until-now)/60000)} мин.`); return;
-    }
-    const fn = window[`show_${appCfg.adZoneId}`];
-    if (typeof fn !== 'function') { tg.showAlert('Рекламная сеть не готова. Попробуйте чуть позже.'); return; }
+      <!-- Category chips -->
+      <div class="flex gap-2 mb-3 overflow-x-auto" id="category-chips"></div>
 
-    showPopup(`<div class="popup-spin"><div class="spinner"></div></div><h2>Загрузка рекламы</h2><p>Подождите...</p>`);
-    try {
-      await fn();
-      closePopup();
-      userState = await api('POST', '/api/user/watch-ad', { userId: tgUser.id });
-      tg.HapticFeedback.notificationOccurred('success');
-      tg.showAlert(`+${fmt(appCfg.adValue)} ₽ добавлено в кошелёк заработка.`);
-      renderUI();
-    } catch(e) {
-      closePopup(); tg.showAlert('Не удалось загрузить рекламу. Попробуйте снова.');
-    }
-  };
+      <!-- Services list -->
+      <div class="text-[14px] font-bold display mb-2.5 px-0.5">Available services</div>
+      <div id="services-list" class="space-y-2.5 mb-5"></div>
 
-  const handleMoveBalance = async () => {
-    if ((userState.earning_wallet||0) < 100) { tg.showAlert('Нужно минимум 100 ₽.'); return; }
-    const btn = document.getElementById('move-btn');
-    btn.disabled=true; btn.textContent='Переводим...';
-    try {
-      userState = await api('POST', '/api/user/move-balance', { userId: tgUser.id });
-      tg.HapticFeedback.notificationOccurred('success');
-      tg.showAlert('Успешно переведено на основной баланс!');
-    } catch(e) { tg.showAlert('Ошибка. Попробуйте снова.'); }
-    finally { btn.textContent='Перевести на основной баланс'; renderUI(); }
-  };
+      <!-- New order panel -->
+      <div id="order-panel" class="card rounded-3xl p-4 mb-5 border-2" style="border-color:var(--violet)">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="display font-bold text-[15px]">New order</h2>
+          <span class="badge" id="order-selected-id">Pick a service</span>
+        </div>
+        <div id="order-selected-name" class="text-[13px] font-semibold mb-3" style="color:var(--text-dim)">No service selected yet</div>
+        <div class="space-y-2.5">
+          <input id="order-link" type="text" placeholder="Link (profile / post URL)" class="w-full rounded-xl px-3 py-2.5 text-sm outline-none" />
+          <input id="order-qty" type="number" min="1" placeholder="Quantity" class="w-full rounded-xl px-3 py-2.5 text-sm outline-none" />
+          <div class="text-[11px]" style="color:var(--text-dim)" id="order-minmax-hint">Min — / Max —</div>
+          <div class="flex items-center justify-between px-1">
+            <span class="text-xs" style="color:var(--text-dim)">Estimated charge</span>
+            <span class="text-sm font-bold" id="order-price">৳0.00</span>
+          </div>
+          <button id="submit-order-btn" class="btn-primary w-full text-white font-bold rounded-xl py-2.5 text-sm">Submit order</button>
+        </div>
+      </div>
 
-  const handleWithdraw = async e => {
-    e.preventDefault();
-    const minR = appCfg.minimumWithdrawReferrals||0;
-    if (minR>0 && (userState.referrals||0)<minR) {
-      tg.showAlert(`Нужно минимум ${minR} рефералов (у вас ${userState.referrals||0}).`); return;
-    }
-    const method = document.getElementById('wd-method').value;
-    const account = document.getElementById('wd-acct').value;
-    const amount = parseFloat(document.getElementById('wd-amount').value);
-    const sel = (appCfg.withdrawMethods||[]).find(m=>m.name===method);
-    if (!sel) { tg.showAlert('Недопустимый способ вывода.'); return; }
-    if (isNaN(amount)||amount<=0) { tg.showAlert('Введите корректную сумму.'); return; }
-    if (amount<sel.min) { tg.showAlert(`Минимальная сумма для ${sel.name}: ${sel.min} ₽`); return; }
-    if (amount>(userState.balance||0)) { tg.showAlert('Недостаточно средств на основном балансе.'); return; }
+      <!-- Orders -->
+      <div class="mb-4">
+        <h2 class="display font-bold text-[15px] mb-2.5 px-0.5">Recent orders</h2>
+        <div id="orders-list" class="space-y-2.5"></div>
+        <button id="load-more-btn" class="w-full mt-3 text-xs font-semibold py-2.5 rounded-xl card" style="color:var(--text-dim)">Load more</button>
+      </div>
+    </div>
+  </section>
 
-    const btn=document.getElementById('wd-btn'); btn.disabled=true; btn.textContent='Отправляем...';
-    try {
-      const res = await api('POST','/api/user/withdraw',{userId:tgUser.id,method,account,amount});
-      if (res.error) { tg.showAlert(res.error); return; }
-      userState.balance = (userState.balance||0) - amount;
-      userHistory.unshift(res.withdrawal);
-      tg.HapticFeedback.notificationOccurred('success');
-      tg.showAlert('Заявка на вывод успешно отправлена!');
-      document.getElementById('wd-form').reset();
-      renderHistory();
-    } catch(e) { tg.showAlert('Ошибка отправки. Попробуйте снова.'); }
-    finally { btn.disabled=false; btn.textContent='Отправить заявку'; renderUI(); }
-  };
+  <!-- ============ ADD FUND PAGE ============ -->
+  <section id="page-addfund" class="page px-4 pt-5">
+    <h1 class="display font-bold text-xl mb-5">Add balance</h1>
 
-  const handleClaimTask = async e => {
-    const btn = e.target.closest('button[data-task]');
-    if (!btn || btn.disabled) return;
-    const taskId = btn.dataset.task, taskUrl = btn.dataset.url;
-    tg.openLink(taskUrl);
-    btn.disabled=true; btn.textContent='Получаем...';
-    setTimeout(async()=>{
-      try {
-        const r = await api('POST','/api/task/claim',{userId:tgUser.id,taskId});
-        if (r.error){btn.disabled=false;btn.textContent='Забрать';tg.showAlert(r.error);return;}
-        if (!userState.completedTasks) userState.completedTasks={};
-        userState.completedTasks[taskId]=true;
-        userState.balance=(userState.balance||0)+r.reward;
-        tg.HapticFeedback.notificationOccurred('success');
-        tg.showAlert(`Получено ${fmt(r.reward)} ₽!`);
-        renderUI();
-      } catch(e){btn.disabled=false;btn.textContent='Забрать';}
-    }, 5000);
-  };
+    <div class="grid grid-cols-1 gap-3 mb-6">
+      <div class="card rounded-2xl p-4 flex items-center justify-between" style="border-left:5px solid var(--violet)">
+        <div>
+          <div class="font-bold display text-lg">৳50</div>
+          <div class="text-xs font-semibold" style="color:var(--green)">+ ৳5 bonus</div>
+        </div>
+        <button class="deposit-btn btn-primary text-white text-xs font-bold px-4 py-2 rounded-full" data-amount="50" data-bonus="5">Deposit now</button>
+      </div>
+      <div class="card rounded-2xl p-4 flex items-center justify-between" style="border-left:5px solid var(--sky)">
+        <div>
+          <div class="font-bold display text-lg">৳100</div>
+          <div class="text-xs font-semibold" style="color:var(--green)">+ ৳10 bonus</div>
+        </div>
+        <button class="deposit-btn btn-primary text-white text-xs font-bold px-4 py-2 rounded-full" data-amount="100" data-bonus="10">Deposit now</button>
+      </div>
+      <div class="card rounded-2xl p-4 flex items-center justify-between" style="border-left:5px solid var(--pink)">
+        <div>
+          <div class="font-bold display text-lg">৳200</div>
+          <div class="text-xs font-semibold" style="color:var(--green)">+ ৳20 bonus</div>
+        </div>
+        <button class="deposit-btn btn-primary text-white text-xs font-bold px-4 py-2 rounded-full" data-amount="200" data-bonus="20">Deposit now</button>
+      </div>
+    </div>
 
-  const copyRef = () => {
-    const inp = document.getElementById('ref-link'); inp.select();
-    navigator.clipboard.writeText(inp.value).then(()=>{
-      tg.HapticFeedback.notificationOccurred('success');
-      tg.showAlert('Реферальная ссылка скопирована!');
-    }).catch(()=>{ document.execCommand('copy'); tg.showAlert('Скопировано!'); });
-  };
+    <h2 class="display font-bold text-[15px] mb-3">Deposit history</h2>
+    <div id="deposits-list" class="space-y-2.5"></div>
+  </section>
 
-  // ── navigation ─────────────────────────────────────────
-  const setupNav = () => {
-    document.querySelectorAll('.nav-btn').forEach(btn=>{
-      btn.addEventListener('click',()=>{
-        const pg = btn.dataset.page;
-        document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-        document.getElementById(pg).classList.add('active');
-        document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
-        btn.classList.add('active');
-        if (pg==='profile-page')    renderHistory();
-        if (pg==='leaderboard-page') renderLeaderboard();
-      });
-    });
-  };
+  <!-- ============ PROFILE PAGE ============ -->
+  <section id="page-profile" class="page">
+    <div class="hero h-32 relative rounded-b-[36px]"></div>
+    <div class="px-4 -mt-12 relative z-10">
+      <div class="flex flex-col items-center text-center mb-4">
+        <div class="w-20 h-20 rounded-3xl bg-gradient-to-br from-violet-500 to-pink-400 flex items-center justify-center font-bold text-white text-2xl display border-4" style="border-color:var(--bg)" id="profile-avatar">U</div>
+        <div class="font-bold display text-[16px] mt-2" id="profile-username">—</div>
+        <div class="text-xs" style="color:var(--text-dim)" id="profile-tgid">ID: —</div>
+        <div class="flex items-center gap-2 mt-3">
+          <div class="balance-pill">🪙 <span id="profile-balance">৳0.00</span></div>
+          <button onclick="goTo('addfund')" class="topup-pill" style="background:var(--navy); color:#fff;">Top up</button>
+        </div>
+      </div>
 
-  const setupEvents = () => {
-    document.getElementById('move-btn').addEventListener('click', handleMoveBalance);
-    document.getElementById('bonus-tasks').addEventListener('click', handleClaimTask);
-    document.getElementById('profile-page').addEventListener('submit', e=>{
-      if (e.target.id==='wd-form') handleWithdraw(e);
-    });
-    document.getElementById('ref-section').addEventListener('click', e=>{
-      if (e.target.id==='copy-ref') copyRef();
-    });
-    document.querySelector('.lb-toggle').addEventListener('click', e=>{
-      const btn = e.target.closest('.lb-btn'); if(!btn) return;
-      document.querySelectorAll('.lb-btn').forEach(b=>b.classList.remove('active'));
-      btn.classList.add('active');
-      renderLeaderboard();
-    });
-  };
+      <div class="card rounded-3xl p-4 mb-4">
+        <div class="grid grid-cols-2 gap-2.5" id="profile-stats-grid"></div>
+      </div>
 
-  initApp();
+      <div class="card rounded-3xl p-4 mb-4">
+        <h2 class="display font-bold text-[15px] mb-2">API key</h2>
+        <div class="flex items-center gap-2 mb-3">
+          <input id="api-key-field" readonly type="password" value="••••••••••••••••••••••••••••••••••••••" class="flex-1 rounded-xl px-3 py-2 text-xs outline-none" />
+          <button id="toggle-key-btn" class="card px-3 py-2 rounded-xl text-xs">👁</button>
+        </div>
+        <div class="flex gap-2">
+          <button id="copy-key-btn" class="flex-1 card rounded-xl py-2 text-xs font-semibold">Copy key</button>
+          <button id="regen-key-btn" class="flex-1 card rounded-xl py-2 text-xs font-semibold" style="color:var(--red)">Regenerate</button>
+        </div>
+      </div>
+
+      <div class="card rounded-3xl p-4 mb-4">
+        <h2 class="display font-bold text-[15px] mb-3">Settings</h2>
+        <div class="flex items-center justify-between py-2">
+          <span class="text-sm font-medium">Dark mode</span>
+          <button id="settings-theme-toggle" class="w-11 h-6 rounded-full card relative">
+            <span class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-violet-500 transition-all" id="theme-knob"></span>
+          </button>
+        </div>
+        <div class="flex items-center justify-between py-2">
+          <span class="text-sm font-medium">Notifications</span>
+          <button id="notif-toggle" class="w-11 h-6 rounded-full card relative">
+            <span class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-violet-500 transition-all" id="notif-knob"></span>
+          </button>
+        </div>
+        <button id="logout-btn" class="w-full mt-2 py-2.5 rounded-xl text-sm font-semibold" style="color:var(--red)">Log out</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ BOTTOM NAV ============ -->
+  <nav class="fixed bottom-0 left-0 right-0 navbar max-w-md mx-auto flex px-2 z-50">
+    <button class="navitem active" data-page="home"><span class="text-xl">🏠</span><span class="text-[10px]">Home</span></button>
+    <button class="navitem" data-page="addfund"><span class="text-xl">🛍️</span><span class="text-[10px]">Store</span></button>
+    <button class="navitem" data-page="profile"><span class="text-xl">⚙️</span><span class="text-[10px]">Settings</span></button>
+  </nav>
+
+  <div id="toast" class="toast"></div>
+
+<script>
+/* ─────────────────────────────────────────────────────────────
+   Config
+───────────────────────────────────────────────────────────── */
+const API_BASE = ""; // same-origin
+const ADMIN_TELEGRAM_HANDLE = "uglybhai";
+const CATEGORY_STYLES = [
+  { key:'stat-purple', icon:'💜' }, { key:'stat-lime', icon:'💚' }, { key:'stat-pink', icon:'🩷' },
+  { key:'stat-sky', icon:'💙' }, { key:'stat-orange', icon:'🧡' }, { key:'stat-teal', icon:'🩵' },
+];
+
+let token = localStorage.getItem("smm_token") || null;
+let currentUser = null;
+let currentServices = [];
+let selectedCategory = 'All';
+let selectedService = null;
+let ordersOffset = 0;
+const ORDERS_PAGE_SIZE = 10;
+
+const tg = window.Telegram ? window.Telegram.WebApp : null;
+if (tg) { tg.ready(); tg.expand(); }
+
+/* ─────────────────────────────────────────────────────────────
+   Utilities
+───────────────────────────────────────────────────────────── */
+function showToast(msg){
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(()=> el.classList.remove('show'), 2200);
+}
+
+async function api(path, opts = {}){
+  const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(API_BASE + path, Object.assign({}, opts, { headers }));
+  if (!res.ok){
+    let detail = 'Request failed';
+    try { detail = (await res.json()).detail || detail; } catch(e){}
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+function money(n){ return '৳' + Number(n || 0).toFixed(2); }
+
+/* ─────────────────────────────────────────────────────────────
+   Navigation
+───────────────────────────────────────────────────────────── */
+function goTo(pageName){
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + pageName).classList.add('active');
+  document.querySelectorAll('.navitem').forEach(b => b.classList.toggle('active', b.dataset.page === pageName));
+}
+document.querySelectorAll('.navitem').forEach(btn => btn.addEventListener('click', () => goTo(btn.dataset.page)));
+
+/* ─────────────────────────────────────────────────────────────
+   Theme
+───────────────────────────────────────────────────────────── */
+function applyTheme(theme){
+  document.body.classList.toggle('dark', theme === 'dark');
+  document.getElementById('theme-toggle').textContent = theme === 'dark' ? '☀️' : '🌙';
+  document.getElementById('theme-knob').style.transform = theme === 'dark' ? 'translateX(20px)' : 'translateX(0)';
+  localStorage.setItem('smm_theme', theme);
+}
+document.getElementById('theme-toggle').addEventListener('click', () => applyTheme(document.body.classList.contains('dark') ? 'light' : 'dark'));
+document.getElementById('settings-theme-toggle').addEventListener('click', () => applyTheme(document.body.classList.contains('dark') ? 'light' : 'dark'));
+applyTheme(localStorage.getItem('smm_theme') || 'light');
+
+let notifOn = localStorage.getItem('smm_notif') !== 'off';
+function applyNotif(){ document.getElementById('notif-knob').style.transform = notifOn ? 'translateX(20px)' : 'translateX(0)'; }
+document.getElementById('notif-toggle').addEventListener('click', () => {
+  notifOn = !notifOn;
+  localStorage.setItem('smm_notif', notifOn ? 'on' : 'off');
+  applyNotif();
 });
+applyNotif();
+
+/* ─────────────────────────────────────────────────────────────
+   Auth
+───────────────────────────────────────────────────────────── */
+async function authenticate(){
+  if (!tg || !tg.initData){ showToast('Open this app from Telegram'); return; }
+  try {
+    const data = await api('/api/auth/telegram', { method:'POST', body: JSON.stringify({ init_data: tg.initData }) });
+    token = data.access_token;
+    localStorage.setItem('smm_token', token);
+    await loadEverything();
+  } catch(e){ showToast(e.message); }
+}
+
+document.getElementById('logout-btn').addEventListener('click', () => {
+  localStorage.removeItem('smm_token');
+  token = null;
+  showToast('Logged out');
+  if (tg && tg.close) tg.close();
+});
+
+/* ─────────────────────────────────────────────────────────────
+   Profile / Home render
+───────────────────────────────────────────────────────────── */
+function statCards(u){
+  return [
+    ['Total orders', u.total_orders, '📦', 'stat-purple'],
+    ['Completed', u.completed_orders, '✅', 'stat-lime'],
+    ['Pending', u.pending_orders, '⏳', 'stat-pink'],
+    ['Cancelled', u.cancelled_orders, '⛔', 'stat-sky'],
+    ['Total deposits', money(u.total_deposit), '💵', 'stat-orange'],
+    ['Total spent', money(u.total_spent), '📊', 'stat-teal'],
+  ].map(([label, val, icon, cls]) => `
+    <div class="stat-card ${cls}">
+      <span class="icon">${icon}</span>
+      <div class="font-bold display text-[19px] relative z-10">${val}</div>
+      <div class="text-[11px] font-semibold relative z-10 opacity-90">${label}</div>
+    </div>`).join('');
+}
+
+function renderUser(u){
+  currentUser = u;
+  const initials = (u.first_name || u.username || 'U').charAt(0).toUpperCase();
+  document.getElementById('avatar').textContent = initials;
+  document.getElementById('profile-avatar').textContent = initials;
+  document.getElementById('home-username').textContent = u.username ? '@' + u.username : (u.first_name || 'User');
+  document.getElementById('home-tgid').textContent = 'ID: ' + u.telegram_id;
+  document.getElementById('profile-username').textContent = u.username ? '@' + u.username : (u.first_name || 'User');
+  document.getElementById('profile-tgid').textContent = 'ID: ' + u.telegram_id;
+  document.getElementById('balance-amount').textContent = money(u.balance);
+  document.getElementById('profile-balance').textContent = money(u.balance);
+  document.getElementById('api-key-field').dataset.real = u.api_key;
+
+  document.getElementById('stats-grid').innerHTML = statCards(u);
+  document.getElementById('profile-stats-grid').innerHTML = statCards(u);
+}
+
+document.getElementById('toggle-key-btn').addEventListener('click', () => {
+  const field = document.getElementById('api-key-field');
+  const visible = field.type === 'text';
+  field.type = visible ? 'password' : 'text';
+  field.value = visible ? '•'.repeat(40) : field.dataset.real;
+});
+document.getElementById('copy-key-btn').addEventListener('click', () => {
+  navigator.clipboard.writeText(document.getElementById('api-key-field').dataset.real || '');
+  showToast('API key copied');
+});
+document.getElementById('regen-key-btn').addEventListener('click', async () => {
+  if (!confirm('Regenerate your API key? The old key will stop working immediately.')) return;
+  try {
+    const data = await api('/api/profile/regenerate-key', { method:'POST' });
+    document.getElementById('api-key-field').dataset.real = data.api_key;
+    showToast('API key regenerated');
+  } catch(e){ showToast(e.message); }
+});
+
+/* ─────────────────────────────────────────────────────────────
+   Services: category chips + list + selection into order panel
+───────────────────────────────────────────────────────────── */
+function styleForCategory(cat){
+  let hash = 0;
+  for (const ch of (cat || 'x')) hash = (hash * 31 + ch.charCodeAt(0)) % CATEGORY_STYLES.length;
+  return CATEGORY_STYLES[hash];
+}
+
+async function loadServices(){
+  try {
+    currentServices = await api('/api/services');
+    renderCategoryChips();
+    renderServicesList();
+  } catch(e){ showToast('Could not load services'); }
+}
+
+function renderCategoryChips(){
+  const cats = ['All', ...new Set(currentServices.map(s => s.category || 'General'))];
+  document.getElementById('category-chips').innerHTML = cats.map(c => `
+    <button class="chip ${c === selectedCategory ? 'active' : ''}" data-cat="${c}">${c}</button>
+  `).join('');
+  document.querySelectorAll('#category-chips .chip').forEach(btn => {
+    btn.addEventListener('click', () => { selectedCategory = btn.dataset.cat; renderCategoryChips(); renderServicesList(); });
+  });
+}
+
+function renderServicesList(){
+  const filtered = selectedCategory === 'All'
+    ? currentServices
+    : currentServices.filter(s => (s.category || 'General') === selectedCategory);
+  const list = document.getElementById('services-list');
+  if (filtered.length === 0){
+    list.innerHTML = `<div class="card rounded-2xl p-4 text-center text-sm" style="color:var(--text-dim)">No services in this category</div>`;
+    return;
+  }
+  list.innerHTML = filtered.map(s => {
+    const st = styleForCategory(s.category);
+    return `
+    <div class="card rounded-2xl p-3 flex items-center gap-3">
+      <div class="svc-thumb ${st.key}">${st.icon}</div>
+      <div class="flex-1 min-w-0">
+        <div class="font-bold text-[13.5px] truncate">${s.name}</div>
+        <div class="flex items-center gap-1.5 mt-1 flex-wrap">
+          <span class="badge">ID ${s.custom_id}</span>
+          <span class="badge">৳${Number(s.rate).toFixed(2)}/1k</span>
+          ${s.refill ? '<span class="badge">♻ Refill</span>' : ''}
+          ${s.cancel ? '<span class="badge">✖ Cancel</span>' : ''}
+        </div>
+      </div>
+      <button class="select-service-btn btn-order text-white text-xs font-bold px-4 py-2 rounded-xl" data-id="${s.custom_id}">Order</button>
+    </div>`;
+  }).join('');
+
+  document.querySelectorAll('.select-service-btn').forEach(btn => {
+    btn.addEventListener('click', () => selectService(btn.dataset.id));
+  });
+}
+
+function selectService(customId){
+  selectedService = currentServices.find(s => String(s.custom_id) === String(customId));
+  if (!selectedService) return;
+  document.getElementById('order-selected-id').textContent = 'ID ' + selectedService.custom_id;
+  document.getElementById('order-selected-name').textContent = selectedService.name;
+  document.getElementById('order-minmax-hint').textContent = `Min ${selectedService.min} / Max ${selectedService.max}`;
+  document.getElementById('order-qty').value = selectedService.min;
+  updateOrderPrice();
+  document.getElementById('order-panel').scrollIntoView({ behavior:'smooth', block:'center' });
+}
+
+function updateOrderPrice(){
+  const qty = parseInt(document.getElementById('order-qty').value || '0', 10);
+  if (!selectedService || !qty){ document.getElementById('order-price').textContent = money(0); return; }
+  document.getElementById('order-price').textContent = money((selectedService.rate / 1000) * qty);
+}
+document.getElementById('order-qty').addEventListener('input', updateOrderPrice);
+
+document.getElementById('submit-order-btn').addEventListener('click', async () => {
+  const link = document.getElementById('order-link').value.trim();
+  const quantity = parseInt(document.getElementById('order-qty').value || '0', 10);
+
+  if (!selectedService) return showToast('Choose a service first');
+  if (!link) return showToast('Enter a link');
+  if (!quantity || quantity <= 0) return showToast('Enter a valid quantity');
+
+  const btn = document.getElementById('submit-order-btn');
+  btn.disabled = true;
+  btn.textContent = 'Placing order…';
+  try {
+    await api('/api/orders', { method:'POST', body: JSON.stringify({ service_id: selectedService.custom_id, link, quantity }) });
+    showToast('✅ Order placed successfully');
+    document.getElementById('order-link').value = '';
+    document.getElementById('order-qty').value = '';
+    updateOrderPrice();
+    ordersOffset = 0;
+    await loadOrders(true);
+    await refreshProfile();
+  } catch(e){ showToast(e.message); }
+  finally { btn.disabled = false; btn.textContent = 'Submit order'; }
+});
+
+/* ─────────────────────────────────────────────────────────────
+   Orders list + live HTTP order-details lookup
+───────────────────────────────────────────────────────────── */
+function statusPill(status){
+  return `<span class="status-pill st-${status}">${status.replace('_',' ')}</span>`;
+}
+
+async function loadOrders(reset = false){
+  if (reset) ordersOffset = 0;
+  try {
+    const orders = await api(`/api/orders?limit=${ORDERS_PAGE_SIZE}&offset=${ordersOffset}`);
+    const list = document.getElementById('orders-list');
+    if (reset) list.innerHTML = '';
+    if (orders.length === 0 && ordersOffset === 0){
+      list.innerHTML = `<div class="card rounded-2xl p-4 text-center text-sm" style="color:var(--text-dim)">No orders yet</div>`;
+    }
+    list.innerHTML += orders.map(o => `
+      <div class="card rounded-2xl p-3.5" id="order-card-${o.id}">
+        <div class="flex justify-between items-start mb-1">
+          <div>
+            <div class="text-sm font-bold">${o.service_name || ('Service ' + o.custom_service_id)}</div>
+            <div class="text-[11px] font-mono" style="color:var(--text-dim)">Order ID: ${o.order_id}</div>
+          </div>
+          ${statusPill(o.status)}
+        </div>
+        <div class="text-xs flex justify-between mt-1" style="color:var(--text-dim)">
+          <span>Qty ${o.quantity}</span>
+          <span>${money(o.charge)}</span>
+        </div>
+        <div class="flex items-center justify-between mt-1.5">
+          <span class="text-[11px]" style="color:var(--text-dim)">${new Date(o.created_at).toLocaleString()}</span>
+          <button class="details-btn text-[11px] font-bold" style="color:var(--violet)" data-id="${o.id}">View details</button>
+        </div>
+        <div class="details-row text-xs mt-2 space-y-1" id="details-${o.id}" style="color:var(--text-dim)"></div>
+      </div>
+    `).join('');
+    ordersOffset += orders.length;
+    document.getElementById('load-more-btn').style.display = orders.length < ORDERS_PAGE_SIZE ? 'none' : 'block';
+
+    document.querySelectorAll('.details-btn').forEach(btn => btn.addEventListener('click', () => toggleOrderDetails(btn.dataset.id, btn)));
+  } catch(e){ showToast('Could not load orders'); }
+}
+document.getElementById('load-more-btn').addEventListener('click', () => loadOrders(false));
+
+async function toggleOrderDetails(orderId, btn){
+  const row = document.getElementById('details-' + orderId);
+  const isOpen = row.classList.contains('open');
+  if (isOpen){ row.classList.remove('open'); btn.textContent = 'View details'; return; }
+
+  btn.textContent = 'Loading…';
+  try {
+    const d = await api(`/api/orders/${orderId}/details`);
+    const pr = d.provider_response || {};
+    row.innerHTML = `
+      <div class="flex justify-between"><span>Order ID</span><span class="font-mono font-semibold" style="color:var(--text)">${d.order_id}</span></div>
+      <div class="flex justify-between"><span>Live status (HTTP)</span><span class="font-semibold" style="color:var(--text)">${pr.status || d.status}</span></div>
+      <div class="flex justify-between"><span>Start count</span><span style="color:var(--text)">${d.start_count ?? '—'}</span></div>
+      <div class="flex justify-between"><span>Remains</span><span style="color:var(--text)">${d.remains ?? '—'}</span></div>
+      <div class="flex justify-between"><span>Provider charge</span><span style="color:var(--text)">${pr.charge ?? '—'} ${pr.currency || ''}</span></div>
+    `;
+    row.classList.add('open');
+    btn.textContent = 'Hide details';
+    renderUser(await api('/api/profile'));
+  } catch(e){
+    row.innerHTML = `<div style="color:var(--red)">${e.message}</div>`;
+    row.classList.add('open');
+    btn.textContent = 'Hide details';
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Deposits
+───────────────────────────────────────────────────────────── */
+document.querySelectorAll('.deposit-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const amount = btn.dataset.amount;
+    const bonus = btn.dataset.bonus;
+    try {
+      await api('/api/deposits', { method:'POST', body: JSON.stringify({ amount: parseFloat(amount), bonus: parseFloat(bonus) }) });
+      await loadDeposits();
+      showToast('Deposit request created');
+    } catch(e){ showToast(e.message); }
+
+    const uid = currentUser ? currentUser.telegram_id : '';
+    const uname = currentUser && currentUser.username ? '@' + currentUser.username : 'N/A';
+    const text = `Hello Admin,\n\nI want to deposit:\n৳${amount}\n\nTelegram ID:\n${uid}\n\nUsername:\n${uname}`;
+    const url = `https://t.me/${ADMIN_TELEGRAM_HANDLE}?text=${encodeURIComponent(text)}`;
+    if (tg && tg.openTelegramLink) tg.openTelegramLink(url);
+    else window.open(url, '_blank');
+  });
+});
+
+async function loadDeposits(){
+  try {
+    const deposits = await api('/api/deposits');
+    const list = document.getElementById('deposits-list');
+    if (deposits.length === 0){
+      list.innerHTML = `<div class="card rounded-2xl p-4 text-center text-sm" style="color:var(--text-dim)">No deposits yet</div>`;
+      return;
+    }
+    list.innerHTML = deposits.map(d => `
+      <div class="card rounded-2xl p-3.5 flex justify-between items-center">
+        <div>
+          <div class="font-bold text-sm">${money(d.amount)} <span style="color:var(--green)" class="text-xs">+${money(d.bonus)}</span></div>
+          <div class="text-[11px]" style="color:var(--text-dim)">${new Date(d.created_at).toLocaleString()}</div>
+        </div>
+        ${statusPill(d.status === 'approved' ? 'completed' : d.status === 'rejected' ? 'cancelled' : 'pending')}
+      </div>
+    `).join('');
+  } catch(e){ showToast('Could not load deposits'); }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Bootstrapping
+───────────────────────────────────────────────────────────── */
+async function refreshProfile(){ renderUser(await api('/api/profile')); }
+
+async function loadEverything(){
+  try {
+    await refreshProfile();
+    await Promise.all([loadServices(), loadOrders(true), loadDeposits()]);
+  } catch(e){
+    showToast('Session expired, please reopen the app');
+    localStorage.removeItem('smm_token');
+  }
+}
+
+(async function init(){
+  if (token) await loadEverything();
+  else await authenticate();
+})();
 </script>
 </body>
 </html>
