@@ -11,35 +11,45 @@ Run locally:
 Deploy on Render:
     Build command : pip install -r requirements.txt
     Start command : uvicorn main:app --host 0.0.0.0 --port $PORT
-    Add the environment variables listed below in the Render dashboard.
 
 Environment variables:
-    DATABASE_URL      - PostgreSQL connection string
-    JWT_SECRET        - secret used to sign user JWTs
-    BOT_TOKEN         - Telegram bot token (used to validate Telegram WebApp initData)
-    PROVIDER_API_KEY  - your provider api key (get it from your provider's Account page)
-    PROVIDER_BASE_URL - e.g. https://smmprovider.onrender.com/api/v2
-    ADMIN_KEY         - shared secret required by admin/admin.html to call /api/admin/* routes
+    DATABASE_URL         - PostgreSQL connection string
+    JWT_SECRET           - secret used to sign user JWTs
+    BOT_TOKEN            - Telegram bot token (validates Telegram WebApp initData)
+    UPSTREAM_API_KEY     - YOUR api key at your upstream provider (smmgen.com)
+    UPSTREAM_BASE_URL    - your upstream provider's endpoint (default: https://smmgen.com/api/v2)
+    ADMIN_TELEGRAM_IDS   - comma-separated Telegram user IDs allowed into /admin. No password —
+                            admin.html logs in with Telegram, same as the user app, and the
+                            backend checks the logged-in telegram_id against this list.
 
 ────────────────────────────────────────────────────────────────────────
-HOW THE SERVICE-ID MAPPING WORKS
+TWO DIFFERENT "PROVIDER" THINGS IN THIS PROJECT — READ THIS CAREFULLY
 ────────────────────────────────────────────────────────────────────────
-Your provider (https://smmprovider.onrender.com/api/v2) has its own internal
-service IDs (1, 2, 3 ...). You don't want to expose those raw provider IDs to
-your users, and you may want to resell at your own price. So this backend
-keeps a `ServiceMap` table:
+1) UPSTREAM PROVIDER (where YOUR orders actually get fulfilled)
+   This is smmgen.com (UPSTREAM_BASE_URL). Your backend calls this with
+   YOUR UPSTREAM_API_KEY whenever a user places an order or checks status.
+   Your users never see this URL or key.
 
-    custom_id            -> the ID your users see, e.g. 2001, 2002, 4001
-    provider_service_id  -> the provider's real ID, e.g. 1, 2, 3 (hidden from users)
-    name / category      -> what users see
-    rate                 -> what you charge your users (per 1000)
-    min / max            -> order quantity limits
-    refill / cancel      -> capability flags
-    active                -> whether it's shown to users right now
+2) YOUR OWN CHILD-PROVIDER API (this app, exposed at POST /api/v2)
+   Your panel *is itself* a provider to whoever you give access to — e.g.
+   other resellers who want to buy through your panel programmatically,
+   exactly like you buy through smmgen.com. They authenticate with the
+   personal `api_key` your panel generated for their account (see
+   /api/profile), and call:
 
-Admins manage this mapping from admin/admin.html -> "Services" tab, where the
-"Your provider services" table is fetched live over HTTP from the provider,
-and each row can be mapped to a custom ID with one click.
+       POST https://<your-render-app>.onrender.com/api/v2
+       key=<their personal api_key>
+       action=services | add | status | balance
+
+   This is the "child provider" URL you mentioned
+   (e.g. https://smmprovider.onrender.com/api/v2 once deployed).
+
+────────────────────────────────────────────────────────────────────────
+CUSTOM SERVICE-ID MAPPING (unchanged from before)
+────────────────────────────────────────────────────────────────────────
+`ServiceMap` still maps a custom_id you control (2001, 4001, ...) to the
+upstream provider's real service id (hidden from everyone but you).
+Manage it from admin.html -> Services tab.
 """
 
 import os
@@ -50,14 +60,14 @@ import string
 import json
 from datetime import datetime, timedelta
 from urllib.parse import parse_qsl
-from typing import Optional, List
+from typing import Optional
 
 import httpx
 import jwt
-from fastapi import FastAPI, Depends, HTTPException, Header
+from fastapi import FastAPI, Depends, HTTPException, Header, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import (
     create_engine, Column, Integer, BigInteger, String, Float, Boolean, DateTime, ForeignKey
@@ -77,9 +87,15 @@ JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_DAYS = 30
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-PROVIDER_API_KEY = os.getenv("PROVIDER_API_KEY", os.getenv("SMMGEN_API_KEY", ""))
-PROVIDER_BASE_URL = os.getenv("PROVIDER_BASE_URL", os.getenv("SMMGEN_BASE_URL", "https://smmprovider.onrender.com/api/v2"))
-ADMIN_KEY = os.getenv("ADMIN_KEY", "change-this-admin-key")
+
+# The UPSTREAM provider — where your orders actually get fulfilled.
+UPSTREAM_API_KEY = os.getenv("UPSTREAM_API_KEY", os.getenv("SMMGEN_API_KEY", ""))
+UPSTREAM_BASE_URL = os.getenv("UPSTREAM_BASE_URL", os.getenv("SMMGEN_BASE_URL", "https://smmgen.com/api/v2"))
+
+# Telegram IDs allowed to use /admin — no password, Telegram login only.
+ADMIN_TELEGRAM_IDS = {
+    int(x.strip()) for x in os.getenv("ADMIN_TELEGRAM_IDS", "").split(",") if x.strip().isdigit()
+}
 
 # ──────────────────────────────────────────────────────────────────────────
 # Database setup
@@ -124,15 +140,15 @@ class User(Base):
 
 
 class ServiceMap(Base):
-    """Maps a custom (user-facing) service ID to a real provider service ID."""
+    """Maps a custom (user-facing) service ID to the upstream provider's real service ID."""
     __tablename__ = "service_map"
 
     id = Column(Integer, primary_key=True, index=True)
     custom_id = Column(String, unique=True, index=True, nullable=False)   # e.g. "2001"
-    provider_service_id = Column(String, nullable=False)                  # e.g. "1"
+    provider_service_id = Column(String, nullable=False)                  # upstream's real ID, e.g. "1"
     name = Column(String, nullable=False)
     category = Column(String, nullable=True)
-    rate = Column(Float, nullable=False)         # price charged to users, per 1000
+    rate = Column(Float, nullable=False)         # price charged to your users, per 1000
     min_qty = Column(Integer, default=50)
     max_qty = Column(Integer, default=10000)
     refill = Column(Boolean, default=False)
@@ -147,13 +163,13 @@ class Order(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     custom_service_id = Column(String, nullable=False)     # e.g. "2001" (what the user picked)
-    provider_service_id = Column(String, nullable=False)   # e.g. "1" (sent to provider, hidden from user)
+    provider_service_id = Column(String, nullable=False)    # upstream's real ID, hidden from user
     service_name = Column(String, nullable=True)
     category = Column(String, nullable=True)
     link = Column(String, nullable=False)
     quantity = Column(Integer, nullable=False)
     charge = Column(Float, nullable=False)
-    provider_order_id = Column(String, nullable=True, index=True)  # real order id from provider, e.g. 64886784
+    provider_order_id = Column(String, nullable=True, index=True)  # real order id from upstream, e.g. 64886784
     status = Column(String, default="pending")  # pending | in_progress | completed | cancelled | partial
     start_count = Column(String, nullable=True)
     remains = Column(String, nullable=True)
@@ -186,7 +202,7 @@ class TelegramAuthIn(BaseModel):
 
 
 class OrderIn(BaseModel):
-    service_id: str   # this is the CUSTOM id the user selected, e.g. "2001"
+    service_id: str   # the CUSTOM id the user selected, e.g. "2001"
     link: str
     quantity: int
 
@@ -264,9 +280,12 @@ def get_current_user(authorization: Optional[str] = Header(None), db: Session = 
     return user
 
 
-def require_admin(x_admin_key: Optional[str] = Header(None)):
-    if not x_admin_key or not hmac.compare_digest(x_admin_key, ADMIN_KEY):
-        raise HTTPException(status_code=401, detail="Invalid admin key")
+def get_current_admin(user: User = Depends(get_current_user)) -> User:
+    """Telegram-only admin gate — no password. The logged-in telegram_id must
+    appear in ADMIN_TELEGRAM_IDS."""
+    if user.telegram_id not in ADMIN_TELEGRAM_IDS:
+        raise HTTPException(status_code=403, detail="This Telegram account is not an admin")
+    return user
 
 
 def generate_api_key() -> str:
@@ -274,40 +293,46 @@ def generate_api_key() -> str:
     return "".join(secrets.choice(alphabet) for _ in range(40))
 
 
+def get_user_by_api_key(key: str, db: Session) -> User:
+    user = db.query(User).filter(User.api_key == key).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    return user
+
+
 # ──────────────────────────────────────────────────────────────────────────
-# Provider integration (https://smmprovider.onrender.com/api/v2 style API)
-# All calls are real outbound HTTP requests (via httpx), so order status /
-# order details always reflect what the provider currently reports.
+# Upstream provider integration (smmgen.com-style API) — this is where your
+# orders actually get fulfilled. All calls are real outbound HTTP requests.
 # ──────────────────────────────────────────────────────────────────────────
 
-async def provider_request(payload: dict) -> dict:
-    body = {"key": PROVIDER_API_KEY, **payload}
+async def upstream_request(payload: dict) -> dict:
+    body = {"key": UPSTREAM_API_KEY, **payload}
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(PROVIDER_BASE_URL, data=body)
+        resp = await client.post(UPSTREAM_BASE_URL, data=body)
         resp.raise_for_status()
         return resp.json()
 
 
-async def provider_get_services() -> list:
+async def upstream_get_services() -> list:
     """
-    Returns the provider's raw service catalogue, each item shaped like:
+    Returns the upstream provider's raw service catalogue, each item shaped like:
     { "service": 1, "name": "Followers", "type": "Default", "category": "First Category",
       "rate": "0.90", "min": "50", "max": "10000", "refill": true, "cancel": true }
     """
-    data = await provider_request({"action": "services"})
+    data = await upstream_request({"action": "services"})
     return data if isinstance(data, list) else []
 
 
-async def provider_add_order(provider_service_id: str, link: str, quantity: int) -> dict:
+async def upstream_add_order(provider_service_id: str, link: str, quantity: int) -> dict:
     """POST action=add -> { "order": 64886784 }"""
-    return await provider_request(
+    return await upstream_request(
         {"action": "add", "service": provider_service_id, "link": link, "quantity": quantity}
     )
 
 
-async def provider_order_status(provider_order_id: str) -> dict:
+async def upstream_order_status(provider_order_id: str) -> dict:
     """POST action=status -> { "charge": "...", "start_count": "...", "status": "...", "remains": "...", "currency": "..." }"""
-    return await provider_request({"action": "status", "order": provider_order_id})
+    return await upstream_request({"action": "status", "order": provider_order_id})
 
 
 def normalize_status(provider_status: str) -> str:
@@ -321,6 +346,82 @@ def normalize_status(provider_status: str) -> str:
     if "progress" in s or "process" in s:
         return "in_progress"
     return "pending"
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Shared order-placement logic (used by both the Mini App and the child
+# provider API at /api/v2, so behavior is identical for both)
+# ──────────────────────────────────────────────────────────────────────────
+
+async def place_order_for_user(user: User, custom_service_id: str, link: str, quantity: int, db: Session) -> Order:
+    mapping = db.query(ServiceMap).filter(
+        ServiceMap.custom_id == custom_service_id, ServiceMap.active == True  # noqa: E712
+    ).first()
+    if not mapping:
+        raise HTTPException(status_code=400, detail="Service not available")
+    if quantity < mapping.min_qty or quantity > mapping.max_qty:
+        raise HTTPException(status_code=400, detail=f"Quantity must be between {mapping.min_qty} and {mapping.max_qty}")
+
+    charge = round((mapping.rate / 1000) * quantity, 4)
+    if user.balance < charge:
+        raise HTTPException(status_code=400, detail="Insufficient balance")
+
+    try:
+        provider_resp = await upstream_add_order(mapping.provider_service_id, link, quantity)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Upstream provider error: {e}")
+
+    if "order" not in provider_resp:
+        raise HTTPException(status_code=502, detail=f"Upstream provider rejected order: {provider_resp}")
+
+    order = Order(
+        user_id=user.id,
+        custom_service_id=mapping.custom_id,
+        provider_service_id=mapping.provider_service_id,
+        service_name=mapping.name,
+        category=mapping.category,
+        link=link,
+        quantity=quantity,
+        charge=charge,
+        provider_order_id=str(provider_resp["order"]),
+        status="pending",
+    )
+    user.balance -= charge
+    user.total_orders += 1
+    user.pending_orders += 1
+    user.total_spent += charge
+
+    db.add(order)
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+async def fetch_live_order_status(order: Order, user: User, db: Session) -> dict:
+    if not order.provider_order_id:
+        return {}
+    try:
+        provider_data = await upstream_order_status(order.provider_order_id)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Upstream provider error: {e}")
+
+    new_status = normalize_status(provider_data.get("status", order.status))
+    if new_status != order.status:
+        if order.status == "pending" and new_status != "pending":
+            user.pending_orders = max(0, user.pending_orders - 1)
+        if new_status == "completed":
+            user.completed_orders += 1
+        elif new_status == "cancelled":
+            user.cancelled_orders += 1
+            user.balance += order.charge
+            user.total_spent = max(0, user.total_spent - order.charge)
+        order.status = new_status
+
+    order.start_count = provider_data.get("start_count", order.start_count)
+    order.remains = provider_data.get("remains", order.remains)
+    db.commit()
+    db.refresh(order)
+    return provider_data
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -338,7 +439,7 @@ app.add_middleware(
 )
 
 
-# ── Auth ────────────────────────────────────────────────────────────────
+# ── Auth (Telegram only — used by both the user app and the admin app) ──
 
 @app.post("/api/auth/telegram")
 def auth_telegram(payload: TelegramAuthIn, db: Session = Depends(get_db)):
@@ -362,7 +463,7 @@ def auth_telegram(payload: TelegramAuthIn, db: Session = Depends(get_db)):
         db.commit()
 
     token = create_access_token(user.id)
-    return {"access_token": token, "token_type": "bearer"}
+    return {"access_token": token, "token_type": "bearer", "is_admin": user.telegram_id in ADMIN_TELEGRAM_IDS}
 
 
 # ── Profile / Home data ─────────────────────────────────────────────────
@@ -398,25 +499,20 @@ def regenerate_key(user: User = Depends(get_current_user), db: Session = Depends
 
 # ── User-facing services (only mapped + active rows, custom IDs only) ───
 
+def serialize_service_map(r: ServiceMap) -> dict:
+    return {
+        "custom_id": r.custom_id, "name": r.name, "category": r.category, "rate": r.rate,
+        "min": r.min_qty, "max": r.max_qty, "refill": r.refill, "cancel": r.cancel,
+    }
+
+
 @app.get("/api/services")
 def list_services(db: Session = Depends(get_db)):
     rows = db.query(ServiceMap).filter(ServiceMap.active == True).order_by(ServiceMap.custom_id).all()  # noqa: E712
-    return [
-        {
-            "custom_id": r.custom_id,
-            "name": r.name,
-            "category": r.category,
-            "rate": r.rate,
-            "min": r.min_qty,
-            "max": r.max_qty,
-            "refill": r.refill,
-            "cancel": r.cancel,
-        }
-        for r in rows
-    ]
+    return [serialize_service_map(r) for r in rows]
 
 
-# ── Orders ───────────────────────────────────────────────────────────────
+# ── Orders (Mini App, JWT-authenticated) ────────────────────────────────
 
 def serialize_order(o: Order) -> dict:
     return {
@@ -449,86 +545,18 @@ def list_orders(
 
 @app.post("/api/orders")
 async def create_order(payload: OrderIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    mapping = db.query(ServiceMap).filter(
-        ServiceMap.custom_id == payload.service_id, ServiceMap.active == True  # noqa: E712
-    ).first()
-    if not mapping:
-        raise HTTPException(status_code=400, detail="Service not available")
-    if payload.quantity < mapping.min_qty or payload.quantity > mapping.max_qty:
-        raise HTTPException(
-            status_code=400, detail=f"Quantity must be between {mapping.min_qty} and {mapping.max_qty}"
-        )
-
-    charge = round((mapping.rate / 1000) * payload.quantity, 4)
-    if user.balance < charge:
-        raise HTTPException(status_code=400, detail="Insufficient balance")
-
-    try:
-        provider_resp = await provider_add_order(mapping.provider_service_id, payload.link, payload.quantity)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Provider error: {e}")
-
-    if "order" not in provider_resp:
-        raise HTTPException(status_code=502, detail=f"Provider rejected order: {provider_resp}")
-
-    order = Order(
-        user_id=user.id,
-        custom_service_id=mapping.custom_id,
-        provider_service_id=mapping.provider_service_id,
-        service_name=mapping.name,
-        category=mapping.category,
-        link=payload.link,
-        quantity=payload.quantity,
-        charge=charge,
-        provider_order_id=str(provider_resp["order"]),
-        status="pending",
-    )
-    user.balance -= charge
-    user.total_orders += 1
-    user.pending_orders += 1
-    user.total_spent += charge
-
-    db.add(order)
-    db.commit()
-    db.refresh(order)
+    order = await place_order_for_user(user, payload.service_id, payload.link, payload.quantity, db)
     return serialize_order(order)
 
 
 @app.get("/api/orders/{order_id}/details")
 async def order_details(order_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """
-    Makes a live HTTP request to the provider's `action=status` endpoint and
-    returns full order + order-status details (charge, start count, remains,
-    live status), updating the locally stored status/counters if it changed.
-    """
+    """Live HTTP call to the upstream provider's `action=status` endpoint."""
     order = db.query(Order).filter(Order.id == order_id, Order.user_id == user.id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
-    provider_data = {}
-    if order.provider_order_id:
-        try:
-            provider_data = await provider_order_status(order.provider_order_id)
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Provider error: {e}")
-
-        new_status = normalize_status(provider_data.get("status", order.status))
-        if new_status != order.status:
-            if order.status == "pending" and new_status != "pending":
-                user.pending_orders = max(0, user.pending_orders - 1)
-            if new_status == "completed":
-                user.completed_orders += 1
-            elif new_status == "cancelled":
-                user.cancelled_orders += 1
-                user.balance += order.charge
-                user.total_spent = max(0, user.total_spent - order.charge)
-            order.status = new_status
-
-        order.start_count = provider_data.get("start_count", order.start_count)
-        order.remains = provider_data.get("remains", order.remains)
-        db.commit()
-        db.refresh(order)
-
+    provider_data = await fetch_live_order_status(order, user, db)
     result = serialize_order(order)
     result["provider_response"] = {
         "charge": provider_data.get("charge"),
@@ -563,21 +591,21 @@ def create_deposit(payload: DepositIn, user: User = Depends(get_current_user), d
     }
 
 
-# ── Admin: users / orders / deposits ────────────────────────────────────
+# ── Admin (Telegram-only, no password — see get_current_admin) ─────────
 
-@app.get("/api/admin/users", dependencies=[Depends(require_admin)])
+@app.get("/api/admin/users", dependencies=[Depends(get_current_admin)])
 def admin_list_users(db: Session = Depends(get_db)):
     users = db.query(User).order_by(User.created_at.desc()).all()
     return [dict(serialize_user(u), id=u.id) for u in users]
 
 
-@app.get("/api/admin/orders", dependencies=[Depends(require_admin)])
+@app.get("/api/admin/orders", dependencies=[Depends(get_current_admin)])
 def admin_list_orders(db: Session = Depends(get_db)):
     orders = db.query(Order).order_by(Order.created_at.desc()).limit(200).all()
     return [dict(serialize_order(o), user_id=o.user_id) for o in orders]
 
 
-@app.get("/api/admin/deposits", dependencies=[Depends(require_admin)])
+@app.get("/api/admin/deposits", dependencies=[Depends(get_current_admin)])
 def admin_list_deposits(db: Session = Depends(get_db)):
     deposits = db.query(Deposit).order_by(Deposit.created_at.desc()).limit(200).all()
     return [
@@ -587,7 +615,7 @@ def admin_list_deposits(db: Session = Depends(get_db)):
     ]
 
 
-@app.post("/api/admin/deposits/{deposit_id}/status", dependencies=[Depends(require_admin)])
+@app.post("/api/admin/deposits/{deposit_id}/status", dependencies=[Depends(get_current_admin)])
 def admin_update_deposit(deposit_id: int, payload: DepositStatusIn, db: Session = Depends(get_db)):
     deposit = db.query(Deposit).filter(Deposit.id == deposit_id).first()
     if not deposit:
@@ -605,18 +633,16 @@ def admin_update_deposit(deposit_id: int, payload: DepositStatusIn, db: Session 
     return {"id": deposit.id, "status": deposit.status}
 
 
-# ── Admin: provider services + custom ID mapping ────────────────────────
-
-@app.get("/api/admin/provider-services", dependencies=[Depends(require_admin)])
+@app.get("/api/admin/provider-services", dependencies=[Depends(get_current_admin)])
 async def admin_provider_services():
-    """Live HTTP call to the provider to list its raw services & real IDs."""
+    """Live HTTP call to your UPSTREAM provider to list its raw services & real IDs."""
     try:
-        return await provider_get_services()
+        return await upstream_get_services()
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Provider error: {e}")
+        raise HTTPException(status_code=502, detail=f"Upstream provider error: {e}")
 
 
-@app.get("/api/admin/service-map", dependencies=[Depends(require_admin)])
+@app.get("/api/admin/service-map", dependencies=[Depends(get_current_admin)])
 def admin_list_service_map(db: Session = Depends(get_db)):
     rows = db.query(ServiceMap).order_by(ServiceMap.custom_id).all()
     return [
@@ -630,7 +656,7 @@ def admin_list_service_map(db: Session = Depends(get_db)):
     ]
 
 
-@app.post("/api/admin/service-map", dependencies=[Depends(require_admin)])
+@app.post("/api/admin/service-map", dependencies=[Depends(get_current_admin)])
 def admin_upsert_service_map(payload: ServiceMapIn, db: Session = Depends(get_db)):
     row = db.query(ServiceMap).filter(ServiceMap.custom_id == payload.custom_id).first()
     if not row:
@@ -649,7 +675,7 @@ def admin_upsert_service_map(payload: ServiceMapIn, db: Session = Depends(get_db
     return {"custom_id": row.custom_id}
 
 
-@app.post("/api/admin/service-map/{custom_id}/toggle", dependencies=[Depends(require_admin)])
+@app.post("/api/admin/service-map/{custom_id}/toggle", dependencies=[Depends(get_current_admin)])
 def admin_toggle_service_map(custom_id: str, payload: ServiceMapToggleIn, db: Session = Depends(get_db)):
     row = db.query(ServiceMap).filter(ServiceMap.custom_id == custom_id).first()
     if not row:
@@ -659,7 +685,7 @@ def admin_toggle_service_map(custom_id: str, payload: ServiceMapToggleIn, db: Se
     return {"custom_id": row.custom_id, "active": row.active}
 
 
-@app.delete("/api/admin/service-map/{custom_id}", dependencies=[Depends(require_admin)])
+@app.delete("/api/admin/service-map/{custom_id}", dependencies=[Depends(get_current_admin)])
 def admin_delete_service_map(custom_id: str, db: Session = Depends(get_db)):
     row = db.query(ServiceMap).filter(ServiceMap.custom_id == custom_id).first()
     if not row:
@@ -667,6 +693,77 @@ def admin_delete_service_map(custom_id: str, db: Session = Depends(get_db)):
     db.delete(row)
     db.commit()
     return {"deleted": custom_id}
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# CHILD PROVIDER API — this panel acting AS a provider for your own
+# resellers/users. Standard SMM-panel HTTP API shape, authenticated with
+# each user's personal `api_key` (see /api/profile), NOT a JWT.
+#
+#   POST /api/v2
+#     key    = the caller's personal api_key
+#     action = services | add | status | balance
+#     (add)    service, link, quantity
+#     (status) order
+# ──────────────────────────────────────────────────────────────────────────
+
+@app.post("/api/v2")
+async def child_provider_api(
+    key: str = Form(...),
+    action: str = Form(...),
+    service: Optional[str] = Form(None),
+    link: Optional[str] = Form(None),
+    quantity: Optional[int] = Form(None),
+    order: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    user = get_user_by_api_key(key, db)
+
+    if action == "services":
+        rows = db.query(ServiceMap).filter(ServiceMap.active == True).order_by(ServiceMap.custom_id).all()  # noqa: E712
+        return JSONResponse([
+            {
+                "service": r.custom_id, "name": r.name, "type": "Default",
+                "category": r.category or "General", "rate": str(r.rate),
+                "min": str(r.min_qty), "max": str(r.max_qty),
+                "refill": r.refill, "cancel": r.cancel,
+            }
+            for r in rows
+        ])
+
+    if action == "add":
+        if not service or not link or not quantity:
+            return JSONResponse({"error": "service, link and quantity are required"}, status_code=400)
+        try:
+            new_order = await place_order_for_user(user, service, link, quantity, db)
+        except HTTPException as e:
+            return JSONResponse({"error": e.detail}, status_code=e.status_code)
+        return JSONResponse({"order": new_order.provider_order_id or new_order.id})
+
+    if action == "status":
+        if not order:
+            return JSONResponse({"error": "order is required"}, status_code=400)
+        found = db.query(Order).filter(
+            Order.user_id == user.id, Order.provider_order_id == str(order)
+        ).first()
+        if not found:
+            return JSONResponse({"error": "Order not found"}, status_code=404)
+        try:
+            provider_data = await fetch_live_order_status(found, user, db)
+        except HTTPException as e:
+            return JSONResponse({"error": e.detail}, status_code=e.status_code)
+        return JSONResponse({
+            "charge": provider_data.get("charge", str(found.charge)),
+            "start_count": provider_data.get("start_count", found.start_count),
+            "status": found.status,
+            "remains": provider_data.get("remains", found.remains),
+            "currency": provider_data.get("currency", "BDT"),
+        })
+
+    if action == "balance":
+        return JSONResponse({"balance": str(user.balance), "currency": "BDT"})
+
+    return JSONResponse({"error": "Invalid action"}, status_code=400)
 
 
 # ── Static frontend ──────────────────────────────────────────────────────
