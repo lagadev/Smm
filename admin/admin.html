@@ -1,464 +1,397 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Admin Panel — Orange 🍊</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"/>
-  <style>
-    :root{--p:#2980B9;--s:#2C3E50;--l:#ECF0F1;--d:#34495E;--ok:#27AE60;--err:#C0392B;--sur:#fff}
-    *{margin:0;padding:0;box-sizing:border-box}
-    body{font-family:'Poppins',sans-serif;background:var(--l)}
-
-    /* ── login screen ── */
-    #login-screen{position:fixed;inset:0;display:flex;justify-content:center;align-items:center;background:var(--s);z-index:9999}
-    .login-box{background:#fff;border-radius:14px;padding:40px;text-align:center;width:340px;max-width:94vw;box-shadow:0 8px 32px rgba(0,0,0,.3)}
-    .login-box h2{color:var(--s);margin-bottom:6px} .login-box p{color:#666;font-size:.85rem;margin-bottom:22px}
-    .login-box input{width:100%;padding:13px;border:1px solid #ddd;border-radius:8px;font-family:'Poppins',sans-serif;font-size:1rem;margin-bottom:14px;text-align:center}
-    .login-box input:focus{outline:none;border-color:var(--p)}
-    .login-box button{width:100%;padding:13px;background:var(--p);color:#fff;border:none;border-radius:8px;font-family:'Poppins',sans-serif;font-size:1rem;font-weight:600;cursor:pointer}
-    #login-err{color:var(--err);font-size:.82rem;margin-top:10px;display:none}
-
-    /* ── layout ── */
-    #app{display:none}
-    #shell{display:flex}
-    #sidebar{width:250px;min-height:100vh;background:var(--s);color:#fff;display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:500;transform:translateX(-100%);transition:transform .3s}
-    #sidebar.open,#sidebar.pinned{transform:translateX(0)}
-    .sb-head{padding:20px;text-align:center;border-bottom:1px solid rgba(255,255,255,.1)}
-    .sb-head h2{font-size:1.1rem} .sb-head .close{position:absolute;top:14px;right:16px;font-size:1.6rem;cursor:pointer;display:none}
-    .nav-menu{list-style:none;padding:10px 0;flex:1}
-    .nav-menu li{padding:14px 20px;cursor:pointer;border-left:4px solid transparent;transition:all .2s;font-size:.93rem}
-    .nav-menu li:hover,.nav-menu li.active{background:var(--d);border-left-color:var(--p)}
-    .nav-menu li i{margin-right:10px;width:18px;text-align:center}
-    #topbar{display:none;background:var(--s);color:#fff;height:54px;align-items:center;padding:0 15px;position:sticky;top:0;z-index:400}
-    #topbar button{background:none;border:none;color:#fff;font-size:1.5rem;cursor:pointer;margin-right:12px}
-    #topbar h1{font-size:1.1rem}
-    #overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:499;display:none}
-    #overlay.show{display:block}
-    #main{flex:1;padding:24px;min-height:100vh}
-
-    @media(max-width:767px){
-      #topbar{display:flex}
-      #main{padding:16px;padding-top:70px}
-      .sb-head .close{display:block}
-    }
-    @media(min-width:768px){
-      #sidebar{position:static;transform:translateX(0)!important;min-height:100vh}
-      #main{margin-left:250px}
-    }
-
-    /* ── cards ── */
-    .card{background:var(--sur);border-radius:10px;padding:22px;box-shadow:0 2px 12px rgba(0,0,0,.07);margin-bottom:20px}
-    .card h3,.card h4{color:var(--s);margin-bottom:14px}
-    .stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px;margin-bottom:20px}
-    .stat-box{background:var(--sur);border-radius:10px;padding:20px;text-align:center;box-shadow:0 2px 12px rgba(0,0,0,.07)}
-    .stat-box h4{font-size:.82rem;color:#666;text-transform:uppercase;margin-bottom:8px}
-    .stat-box p{font-size:2rem;font-weight:700;color:var(--p)}
-
-    /* ── table ── */
-    table{width:100%;border-collapse:collapse}
-    th{background:var(--l);color:var(--s);padding:10px 12px;text-align:left;font-size:.82rem;text-transform:uppercase}
-    td{padding:11px 12px;border-bottom:1px solid #eee;font-size:.88rem;vertical-align:middle}
-    tr:last-child td{border-bottom:none}
-    tr:hover td{background:#fafafa}
-    .mobile-card-row{display:none}
-    @media(max-width:600px){
-      thead{display:none}
-      tr{display:block;border:1px solid #ddd;border-radius:8px;padding:10px;margin-bottom:12px}
-      td{display:flex;justify-content:space-between;align-items:center;padding:7px 4px;border-bottom:1px solid #f0f0f0;font-size:.85rem}
-      td::before{content:attr(data-label);font-weight:600;margin-right:8px;flex-shrink:0}
-      td:last-child{border-bottom:none}
-    }
-
-    /* ── buttons ── */
-    .btn{padding:8px 14px;border:none;border-radius:6px;color:#fff;cursor:pointer;font-family:'Poppins',sans-serif;font-size:.82rem;font-weight:500;margin:2px;transition:opacity .2s}
-    .btn:hover{opacity:.88}
-    .btn-ok{background:var(--ok)} .btn-err{background:var(--err)} .btn-p{background:var(--p)}
-    .btn-lg{padding:12px 20px;font-size:.95rem;width:100%;margin-top:6px}
-
-    /* ── forms ── */
-    .fg{margin-bottom:14px}
-    .fg label{display:block;font-size:.83rem;font-weight:600;margin-bottom:5px;color:var(--s)}
-    .fg input,.fg select,.fg textarea{width:100%;padding:10px 12px;border:1px solid #ccc;border-radius:7px;font-family:'Poppins',sans-serif;font-size:.9rem}
-    .fg input:focus,.fg select:focus,.fg textarea:focus{outline:none;border-color:var(--p)}
-    .method-row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
-    .method-row input{flex:1}
-    .dyn-list{list-style:none;padding:0}
-    .dyn-item{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #eee}
-    .dyn-item:last-child{border-bottom:none}
-    .badge{padding:3px 9px;border-radius:12px;font-size:.75rem;font-weight:600;color:#fff}
-    .b-pending{background:#F39C12} .b-completed{background:var(--ok)} .b-rejected{background:var(--err)}
-    hr{border:none;border-top:1px solid #eee;margin:18px 0}
-    .page-title{font-size:1.4rem;font-weight:700;color:var(--s);margin-bottom:18px}
-    small{color:#888;font-size:.78rem}
-    .toast{position:fixed;bottom:24px;right:24px;background:#333;color:#fff;padding:12px 20px;border-radius:8px;font-size:.88rem;z-index:9999;opacity:0;transition:opacity .3s;pointer-events:none}
-    .toast.show{opacity:1}
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SMM Panel — Admin</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#FAFAFA; --surface:#FFFFFF; --border:#EAEAEA; --text:#111114; --text-dim:#8A8A93;
+    --accent:#111114; --accent-contrast:#FFFFFF;
+    --green:#16A34A; --orange:#D97706; --red:#DC2626; --blue:#2563EB; --violet:#7C3AED;
+  }
+  .dark{
+    --bg:#0A0A0C; --surface:#131316; --border:#232327; --text:#F4F4F6; --text-dim:#87878F;
+    --accent:#F4F4F6; --accent-contrast:#0A0A0C;
+  }
+  body{ background:var(--bg); color:var(--text); font-family:'Inter',sans-serif; letter-spacing:-0.01em; }
+  .surface{ background:var(--surface); border:1px solid var(--border); }
+  table{ border-collapse:collapse; width:100%; }
+  th{ text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-dim); padding:10px 12px; border-bottom:1px solid var(--border); white-space:nowrap; font-weight:600; }
+  td{ padding:10px 12px; border-bottom:1px solid var(--border); font-size:13px; white-space:nowrap; }
+  tr:last-child td{ border-bottom:none; }
+  input{ background:var(--bg); border:1px solid var(--border); color:var(--text); }
+  .tab{ transition:.15s; }
+  .tab.active{ background:var(--accent); color:var(--accent-contrast); border-color:var(--accent); }
+  .status-pill{ font-size:11px; font-weight:600; padding:3px 9px; border-radius:7px; }
+  .st-pending{ background:rgba(217,119,6,.08); color:#D97706; }
+  .st-completed, .st-approved{ background:rgba(22,163,74,.08); color:#16A34A; }
+  .st-cancelled, .st-rejected, .st-in_progress{ background:rgba(37,99,235,.08); color:#2563EB; }
+  .st-partial{ background:rgba(124,58,237,.08); color:#7C3AED; }
+  ::-webkit-scrollbar{ height:6px; width:6px; }
+  ::-webkit-scrollbar-thumb{ background:var(--border); border-radius:99px; }
+  .mini-input{ width:76px; }
+  .btn-primary{ background:var(--accent); color:var(--accent-contrast); }
+  .btn-outline{ background:var(--surface); border:1px solid var(--border); color:var(--text); }
+</style>
 </head>
-<body>
+<body class="min-h-screen">
 
-<!-- Login -->
-<div id="login-screen">
-  <div class="login-box">
-    <h2>🍊 Admin Panel</h2>
-    <p>Enter your admin password to continue</p>
-    <input type="password" id="pw-input" placeholder="Password" autofocus>
-    <button id="pw-btn">Login</button>
-    <p id="login-err">Incorrect password. Try again.</p>
+<!-- Telegram-auth gate: NO password field. Access is controlled entirely by
+     ADMIN_TELEGRAM_IDS on the backend. -->
+<div id="login-gate" class="min-h-screen flex items-center justify-center px-4">
+  <div class="surface rounded-2xl p-6 w-full max-w-sm text-center">
+    <div id="gate-loading">
+      <h1 class="font-bold text-lg mb-1 tracking-tight">Checking Telegram login…</h1>
+      <p class="text-sm" style="color:var(--text-dim)">Open this page from your admin Telegram account.</p>
+    </div>
+    <div id="gate-denied" class="hidden">
+      <h1 class="font-bold text-lg mb-1 tracking-tight" style="color:var(--red)">Access denied</h1>
+      <p class="text-sm" style="color:var(--text-dim)">This Telegram account isn't on the admin list. Ask an existing admin to add your Telegram ID to <span class="font-mono">ADMIN_TELEGRAM_IDS</span>.</p>
+    </div>
+    <div id="gate-no-telegram" class="hidden">
+      <h1 class="font-bold text-lg mb-1 tracking-tight">Open via Telegram</h1>
+      <p class="text-sm" style="color:var(--text-dim)">This admin panel logs in with Telegram — no password. Open it as a Telegram Mini App (linked from your bot) to continue.</p>
+    </div>
   </div>
 </div>
 
-<!-- Toast -->
-<div id="toast" class="toast"></div>
-
-<!-- App -->
-<div id="app">
-  <div id="shell">
-    <aside id="sidebar">
-      <div class="sb-head">
-        <span class="close" id="sb-close">&times;</span>
-        <h2><i class="fas fa-shield-alt"></i> Admin Panel</h2>
-        <small style="opacity:.6">Orange App</small>
-      </div>
-      <ul class="nav-menu" id="nav-menu">
-        <li data-page="dashboard" class="active"><i class="fas fa-tachometer-alt"></i>Dashboard</li>
-        <li data-page="users"><i class="fas fa-users"></i>Users</li>
-        <li data-page="withdrawals"><i class="fas fa-wallet"></i>Pending Withdrawals</li>
-        <li data-page="history"><i class="fas fa-history"></i>Withdrawal History</li>
-        <li data-page="tasks"><i class="fas fa-tasks"></i>Tasks & Links</li>
-        <li data-page="settings"><i class="fas fa-cog"></i>App Settings</li>
-        <li data-page="broadcast"><i class="fas fa-bullhorn"></i>Broadcast</li>
-      </ul>
-    </aside>
-    <div id="overlay"></div>
-    <div id="main-wrap" style="flex:1;display:flex;flex-direction:column;width:100%">
-      <header id="topbar">
-        <button id="sb-toggle"><i class="fas fa-bars"></i></button>
-        <h1 id="page-title">Dashboard</h1>
-      </header>
-      <main id="main"></main>
+<!-- Dashboard -->
+<div id="dashboard" class="hidden max-w-6xl mx-auto px-4 py-6">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="font-bold text-lg tracking-tight">SMM Panel Admin</h1>
+      <p class="text-xs" style="color:var(--text-dim)" id="admin-whoami">Users, orders, deposits & service mapping</p>
     </div>
+    <button id="logout-btn" class="surface px-4 py-2 rounded-lg text-xs font-semibold">Log out</button>
   </div>
+
+  <div class="flex gap-2 mb-6 overflow-x-auto">
+    <button class="tab active surface rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap" data-tab="overview">Overview</button>
+    <button class="tab surface rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap" data-tab="users">Users</button>
+    <button class="tab surface rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap" data-tab="orders">Orders</button>
+    <button class="tab surface rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap" data-tab="deposits">Deposits</button>
+    <button class="tab surface rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap" data-tab="services">Services</button>
+  </div>
+
+  <section id="tab-overview" class="tab-content">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6" id="overview-stats"></div>
+  </section>
+
+  <section id="tab-orders" class="tab-content hidden">
+    <div class="surface rounded-xl overflow-x-auto">
+      <table>
+        <thead><tr><th>Order ID</th><th>User</th><th>Service (custom ID)</th><th>Qty</th><th>Charge</th><th>Status</th><th>Date</th></tr></thead>
+        <tbody id="orders-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="tab-users" class="tab-content hidden">
+    <div class="surface rounded-xl overflow-x-auto">
+      <table>
+        <thead><tr><th>ID</th><th>Telegram</th><th>Balance</th><th>Orders</th><th>Completed</th><th>Deposits</th><th>Spent</th><th>Joined</th></tr></thead>
+        <tbody id="users-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="tab-deposits" class="tab-content hidden">
+    <div class="surface rounded-xl overflow-x-auto">
+      <table>
+        <thead><tr><th>ID</th><th>User</th><th>Amount</th><th>Bonus</th><th>Status</th><th>Date</th><th>Action</th></tr></thead>
+        <tbody id="deposits-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="tab-services" class="tab-content hidden space-y-6">
+    <div class="surface rounded-xl p-4">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-semibold text-sm">Your upstream provider's services (live via HTTP)</h2>
+        <button id="refresh-provider-btn" class="text-xs font-semibold btn-outline px-3 py-1.5 rounded-lg">Refresh</button>
+      </div>
+      <p class="text-xs mb-3" style="color:var(--text-dim)">
+        Fetched live from your upstream provider (POST action=services). Assign a custom ID (e.g. 2001, 4001) and your markup rate to publish it to your users.
+      </p>
+      <div class="overflow-x-auto">
+        <table>
+          <thead><tr><th>Provider ID</th><th>Name</th><th>Category</th><th>Provider rate</th><th>Min/Max</th><th>Custom ID</th><th>Your rate</th><th></th></tr></thead>
+          <tbody id="provider-services-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="surface rounded-xl p-4">
+      <h2 class="font-semibold text-sm mb-3">Mapped services shown to users</h2>
+      <div class="overflow-x-auto">
+        <table>
+          <thead><tr><th>Custom ID</th><th>Name</th><th>Category</th><th>Rate</th><th>Min/Max</th><th>Refill</th><th>Cancel</th><th>Active</th><th></th></tr></thead>
+          <tbody id="mapped-services-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
 </div>
 
 <script>
-const BASE = '/api/admin';
-let PASS = '';
+const API_BASE = "";
+let token = null;
 
-// ── auth ────────────────────────────────────────────────────
-const pwInput = document.getElementById('pw-input');
-const pwBtn   = document.getElementById('pw-btn');
-const loginErr= document.getElementById('login-err');
+function statusClass(s){
+  return { pending:'st-pending', completed:'st-completed', cancelled:'st-cancelled', approved:'st-approved',
+           rejected:'st-rejected', in_progress:'st-in_progress', partial:'st-partial' }[s] || 'st-pending';
+}
+function money(n){ return '৳' + Number(n||0).toFixed(2); }
 
-const tryLogin = async () => {
-  const pw = pwInput.value.trim();
-  if (!pw) return;
-  pwBtn.textContent = 'Checking...';
-  const r = await fetch(`${BASE}/dashboard`, { headers:{'X-Admin-Password': pw} });
-  if (r.ok) {
-    PASS = pw;
-    document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('app').style.display = 'block';
-    initAdmin();
-  } else {
-    loginErr.style.display = 'block';
-    pwBtn.textContent = 'Login';
-    pwInput.value = '';
+async function adminApi(path, opts = {}){
+  const headers = Object.assign({ 'Content-Type':'application/json' }, opts.headers || {});
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(API_BASE + path, Object.assign({}, opts, { headers }));
+  if (!res.ok){
+    let detail = 'Request failed';
+    try { detail = (await res.json()).detail || detail; } catch(e){}
+    const err = new Error(detail);
+    err.status = res.status;
+    throw err;
   }
-};
-pwBtn.addEventListener('click', tryLogin);
-pwInput.addEventListener('keydown', e => { if(e.key==='Enter') tryLogin(); });
+  return res.json();
+}
 
-// ── api ─────────────────────────────────────────────────────
-const api = async (method, path, body) => {
-  const opts = { method, headers:{'Content-Type':'application/json','X-Admin-Password':PASS} };
-  if (body) opts.body = JSON.stringify(body);
-  const r = await fetch(BASE+path, opts);
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
-};
+document.getElementById('logout-btn').addEventListener('click', () => { token = null; location.reload(); });
 
-const toast = (msg, ok=true) => {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.style.background = ok ? '#27AE60' : '#C0392B';
-  el.classList.add('show');
-  setTimeout(()=>el.classList.remove('show'), 3000);
-};
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+    tab.classList.add('active');
+    document.getElementById('tab-' + tab.dataset.tab).classList.remove('hidden');
+  });
+});
 
-const fmt = n => Number(n||0).toFixed(2);
-const main = document.getElementById('main');
+/* ── Telegram login (no password) ────────────────────────── */
+async function bootstrap(){
+  const tg = window.Telegram ? window.Telegram.WebApp : null;
+  if (tg) { tg.ready(); tg.expand(); }
 
-// ── pages ───────────────────────────────────────────────────
+  if (!tg || !tg.initData){
+    document.getElementById('gate-loading').classList.add('hidden');
+    document.getElementById('gate-no-telegram').classList.remove('hidden');
+    return;
+  }
 
-const renderDashboard = async () => {
-  main.innerHTML = '<p style="opacity:.6">Loading...</p>';
-  const d = await api('GET', '/dashboard');
-  main.innerHTML = `
-    <div class="page-title"><i class="fas fa-tachometer-alt"></i> Dashboard</div>
-    <div class="stat-grid">
-      <div class="stat-box"><h4>Total Users</h4><p>${d.totalUsers}</p></div>
-      <div class="stat-box"><h4>Pending Withdrawals</h4><p>${d.pendingWithdrawals}</p></div>
-      <div class="stat-box"><h4>Total Paid Out (₽)</h4><p>${fmt(d.totalPaid)}</p></div>
-      <div class="stat-box"><h4>Total User Balances (₽)</h4><p>${fmt(d.totalBalance)}</p></div>
-    </div>`;
-};
-
-const renderUsers = async () => {
-  main.innerHTML = '<p style="opacity:.6">Loading users...</p>';
-  const users = await api('GET', '/users');
-  let rows = users.map(u => `
-    <tr>
-      <td data-label="User"><b>${u.first_name||''} ${u.last_name||''}</b><br><small>ID: ${u.id}${u.username?' | @'+u.username:''}</small></td>
-      <td data-label="Balance (₽)">${fmt(u.balance)}</td>
-      <td data-label="Earning Wallet">${fmt(u.earning_wallet)}</td>
-      <td data-label="Refs">${u.referrals||0}</td>
-      <td data-label="Total Earned">${fmt(u.total_earned)}</td>
-      <td data-label="Actions"><button class="btn btn-p" onclick="editBalance(${u.id},'${(u.first_name||'').replace(/'/g,"\\'")}')">Edit Balance</button></td>
-    </tr>`).join('');
-  main.innerHTML = `
-    <div class="page-title"><i class="fas fa-users"></i> Users (${users.length})</div>
-    <div class="card" style="overflow-x:auto"><table>
-      <thead><tr><th>User</th><th>Balance (₽)</th><th>Wallet (₽)</th><th>Refs</th><th>Total Earned</th><th>Actions</th></tr></thead>
-      <tbody>${rows||'<tr><td colspan=6 style="text-align:center;opacity:.5">No users yet.</td></tr>'}</tbody>
-    </table></div>`;
-};
-
-window.editBalance = async (uid, name) => {
-  const amt = prompt(`Add or subtract balance for ${name}.\nUse negative to subtract (e.g., -50).`);
-  if (amt === null || isNaN(parseFloat(amt))) return;
   try {
-    await api('POST', `/users/${uid}/balance`, { amount: parseFloat(amt) });
-    toast('Balance updated!'); renderUsers();
-  } catch(e) { toast('Error updating balance.', false); }
-};
+    const auth = await fetch(`${API_BASE}/api/auth/telegram`, {
+      method: 'POST', headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({ init_data: tg.initData })
+    }).then(r => r.json());
 
-const renderWithdrawals = async () => {
-  main.innerHTML = '<p style="opacity:.6">Loading...</p>';
-  const reqs = await api('GET', '/withdrawals/pending');
-  let rows = reqs.map(r => `
+    token = auth.access_token;
+
+    // Any authenticated Telegram user can get a token, but only admin
+    // routes check ADMIN_TELEGRAM_IDS — try one to confirm access.
+    await adminApi('/api/admin/users');
+
+    document.getElementById('login-gate').classList.add('hidden');
+    document.getElementById('dashboard').classList.remove('hidden');
+    if (tg.initDataUnsafe && tg.initDataUnsafe.user){
+      const u = tg.initDataUnsafe.user;
+      document.getElementById('admin-whoami').textContent = `Logged in as @${u.username || u.first_name} (Telegram)`;
+    }
+    loadAll();
+  } catch(e){
+    document.getElementById('gate-loading').classList.add('hidden');
+    if (e.status === 403){
+      document.getElementById('gate-denied').classList.remove('hidden');
+    } else {
+      document.getElementById('gate-denied').classList.remove('hidden');
+      document.getElementById('gate-denied').querySelector('p').textContent = e.message;
+    }
+  }
+}
+
+/* ── Overview / Users ─────────────────────────────────────── */
+async function loadUsers(){
+  const users = await adminApi('/api/admin/users');
+  document.getElementById('users-tbody').innerHTML = users.map(u => `
     <tr>
-      <td data-label="User">${r.user_name}<br><small>${new Date(r.created_at).toLocaleString()}</small></td>
-      <td data-label="Amount"><b>${fmt(r.amount)} ₽</b></td>
-      <td data-label="Method">${r.method}</td>
-      <td data-label="Account">${r.account}</td>
-      <td data-label="Actions">
-        <button class="btn btn-ok" onclick="doWithdrawal('${r.id}','approve')">Approve</button>
-        <button class="btn btn-err" onclick="doWithdrawal('${r.id}','reject')">Reject</button>
+      <td>#${u.id}</td>
+      <td>${u.username ? '@'+u.username : u.telegram_id}</td>
+      <td>${money(u.balance)}</td>
+      <td>${u.total_orders}</td>
+      <td>${u.completed_orders}</td>
+      <td>${money(u.total_deposit)}</td>
+      <td>${money(u.total_spent)}</td>
+      <td>${new Date(u.created_at).toLocaleDateString()}</td>
+    </tr>
+  `).join('');
+
+  document.getElementById('overview-stats').innerHTML = [
+    ['Total users', users.length],
+    ['Total balance held', money(users.reduce((a,u)=>a+u.balance,0))],
+    ['Total deposits', money(users.reduce((a,u)=>a+u.total_deposit,0))],
+    ['Total spent', money(users.reduce((a,u)=>a+u.total_spent,0))],
+  ].map(([label,val]) => `
+    <div class="surface rounded-xl p-4">
+      <div class="text-xl font-bold tracking-tight">${val}</div>
+      <div class="text-xs" style="color:var(--text-dim)">${label}</div>
+    </div>`).join('');
+}
+
+/* ── Orders ───────────────────────────────────────────────── */
+async function loadOrders(){
+  const orders = await adminApi('/api/admin/orders');
+  document.getElementById('orders-tbody').innerHTML = orders.map(o => `
+    <tr>
+      <td class="font-mono">${o.order_id}</td>
+      <td>User #${o.user_id}</td>
+      <td>${o.service_name || '—'} (${o.custom_service_id})</td>
+      <td>${o.quantity}</td>
+      <td>${money(o.charge)}</td>
+      <td><span class="status-pill ${statusClass(o.status)}">${o.status}</span></td>
+      <td>${new Date(o.created_at).toLocaleString()}</td>
+    </tr>
+  `).join('');
+}
+
+/* ── Deposits ─────────────────────────────────────────────── */
+async function loadDeposits(){
+  const deposits = await adminApi('/api/admin/deposits');
+  document.getElementById('deposits-tbody').innerHTML = deposits.map(d => `
+    <tr>
+      <td>#${d.id}</td>
+      <td>User #${d.user_id}</td>
+      <td>${money(d.amount)}</td>
+      <td>${money(d.bonus)}</td>
+      <td><span class="status-pill ${statusClass(d.status)}">${d.status}</span></td>
+      <td>${new Date(d.created_at).toLocaleString()}</td>
+      <td>
+        ${d.status === 'pending' ? `
+          <button class="approve-btn text-xs font-semibold mr-2" style="color:var(--green)" data-id="${d.id}">Approve</button>
+          <button class="reject-btn text-xs font-semibold" style="color:var(--red)" data-id="${d.id}">Reject</button>
+        ` : '—'}
       </td>
-    </tr>`).join('');
-  main.innerHTML = `
-    <div class="page-title"><i class="fas fa-wallet"></i> Pending Withdrawals</div>
-    <div class="card" style="overflow-x:auto"><table>
-      <thead><tr><th>User & Date</th><th>Amount</th><th>Method</th><th>Account</th><th>Actions</th></tr></thead>
-      <tbody>${rows||'<tr><td colspan=5 style="text-align:center;opacity:.5;padding:20px">No pending requests.</td></tr>'}</tbody>
-    </table></div>`;
-};
-
-window.doWithdrawal = async (id, action) => {
-  if (!confirm(`Are you sure you want to ${action} this request?`)) return;
+    </tr>
+  `).join('');
+  document.querySelectorAll('.approve-btn').forEach(b => b.addEventListener('click', () => updateDeposit(b.dataset.id, 'approved')));
+  document.querySelectorAll('.reject-btn').forEach(b => b.addEventListener('click', () => updateDeposit(b.dataset.id, 'rejected')));
+}
+async function updateDeposit(id, status){
   try {
-    await api('POST', `/withdrawals/${id}/action`, { action });
-    toast(action==='approve'?'Approved!':'Rejected!');
-    renderWithdrawals();
-  } catch(e) { toast('Error processing request.', false); }
-};
+    await adminApi(`/api/admin/deposits/${id}/status`, { method:'POST', body: JSON.stringify({ status }) });
+    await Promise.all([loadDeposits(), loadUsers()]);
+  } catch(e){ alert(e.message); }
+}
 
-const renderHistory = async () => {
-  main.innerHTML = '<p style="opacity:.6">Loading...</p>';
-  const { completed, rejected } = await api('GET', '/withdrawals/history');
-  const makeRows = (arr, badgeClass) => arr.map(r =>
-    `<tr>
-      <td data-label="User">${r.user_name}</td>
-      <td data-label="Amount">${fmt(r.amount)} ₽</td>
-      <td data-label="Method">${r.method}</td>
-      <td data-label="Account">${r.account}</td>
-      <td data-label="Date">${new Date(r.created_at).toLocaleDateString()}</td>
-      <td data-label="Status"><span class="badge ${badgeClass}">${r.status}</span></td>
-    </tr>`).join('');
-  main.innerHTML = `
-    <div class="page-title"><i class="fas fa-history"></i> Withdrawal History</div>
-    <div class="card"><h4>Completed (${completed.length})</h4>
-      <div style="overflow-x:auto"><table>
-        <thead><tr><th>User</th><th>Amount</th><th>Method</th><th>Account</th><th>Date</th><th>Status</th></tr></thead>
-        <tbody>${makeRows(completed,'b-completed')||'<tr><td colspan=6 style="text-align:center;opacity:.5;padding:14px">None.</td></tr>'}</tbody>
-      </table></div></div>
-    <div class="card"><h4>Rejected (${rejected.length})</h4>
-      <div style="overflow-x:auto"><table>
-        <thead><tr><th>User</th><th>Amount</th><th>Method</th><th>Account</th><th>Date</th><th>Status</th></tr></thead>
-        <tbody>${makeRows(rejected,'b-rejected')||'<tr><td colspan=6 style="text-align:center;opacity:.5;padding:14px">None.</td></tr>'}</tbody>
-      </table></div></div>`;
-};
+/* ── Provider services (live) + mapping ──────────────────── */
+let mappedByProviderId = {};
 
-const renderTasks = async () => {
-  main.innerHTML = '<p style="opacity:.6">Loading...</p>';
-  const { tasks, links } = await api('GET', '/tasks');
-  const taskList = tasks.map(t=>
-    `<li class="dyn-item"><span><b>${t.name}</b> <small>(+${fmt(t.reward)} ₽)</small></span>
-     <button class="btn btn-err" onclick="delTask('${t.id}')"><i class="fas fa-trash"></i></button></li>`).join('');
-  const linkList = links.map(l=>
-    `<li class="dyn-item"><span>${l.name}</span>
-     <button class="btn btn-err" onclick="delLink('${l.id}')"><i class="fas fa-trash"></i></button></li>`).join('');
-  main.innerHTML = `
-    <div class="page-title"><i class="fas fa-tasks"></i> Tasks & Links</div>
-    <div class="card"><h4>Current Tasks</h4>
-      ${tasks.length ? `<ul class="dyn-list">${taskList}</ul>` : '<p style="opacity:.5">No tasks yet.</p>'}
-      <hr><h4>Add New Task</h4>
-      <div class="fg"><label>Task Name</label><input id="t-name" placeholder="e.g., Join our Telegram"></div>
-      <div class="fg"><label>URL</label><input id="t-url" placeholder="https://..."></div>
-      <div class="fg"><label>Reward (₽)</label><input id="t-reward" type="number" step="any" placeholder="0.00"></div>
-      <div class="fg"><label>Icon URL</label><input id="t-icon" placeholder="https://..."></div>
-      <button class="btn btn-p" onclick="addTask()"><i class="fas fa-plus"></i> Add Task</button>
-    </div>
-    <div class="card"><h4>Current Links / Buttons</h4>
-      ${links.length ? `<ul class="dyn-list">${linkList}</ul>` : '<p style="opacity:.5">No links yet.</p>'}
-      <hr><h4>Add New Link</h4>
-      <div class="fg"><label>Button Name</label><input id="l-name" placeholder="e.g., Official Channel"></div>
-      <div class="fg"><label>URL</label><input id="l-url" placeholder="https://..."></div>
-      <div class="fg"><label>Icon URL</label><input id="l-icon" placeholder="https://..."></div>
-      <button class="btn btn-p" onclick="addLink()"><i class="fas fa-plus"></i> Add Link</button>
-    </div>`;
-};
+async function loadMappedServices(){
+  const rows = await adminApi('/api/admin/service-map');
+  mappedByProviderId = {};
+  rows.forEach(r => mappedByProviderId[r.provider_service_id] = r);
 
-window.addTask = async () => {
-  const d = { name:document.getElementById('t-name').value, url:document.getElementById('t-url').value,
-               reward:document.getElementById('t-reward').value, icon:document.getElementById('t-icon').value };
-  if (!d.name||!d.url||!d.reward||!d.icon) { toast('All fields required.', false); return; }
-  try { await api('POST','/tasks',d); toast('Task added!'); renderTasks(); }
-  catch(e){ toast('Error adding task.', false); }
-};
-window.delTask = async id => {
-  if (!confirm('Delete this task?')) return;
-  try { await api('DELETE',`/tasks/${id}`); toast('Task deleted.'); renderTasks(); }
-  catch(e){ toast('Error.', false); }
-};
-window.addLink = async () => {
-  const d = { name:document.getElementById('l-name').value, url:document.getElementById('l-url').value,
-               icon:document.getElementById('l-icon').value };
-  if (!d.name||!d.url||!d.icon) { toast('All fields required.', false); return; }
-  try { await api('POST','/links',d); toast('Link added!'); renderTasks(); }
-  catch(e){ toast('Error adding link.', false); }
-};
-window.delLink = async id => {
-  if (!confirm('Delete this link?')) return;
-  try { await api('DELETE',`/links/${id}`); toast('Link deleted.'); renderTasks(); }
-  catch(e){ toast('Error.', false); }
-};
+  document.getElementById('mapped-services-tbody').innerHTML = rows.map(r => `
+    <tr>
+      <td class="font-mono font-semibold">${r.custom_id}</td>
+      <td>${r.name}</td>
+      <td>${r.category || '—'}</td>
+      <td>${money(r.rate)}</td>
+      <td>${r.min} / ${r.max}</td>
+      <td>${r.refill ? 'Yes' : '—'}</td>
+      <td>${r.cancel ? 'Yes' : '—'}</td>
+      <td>
+        <button class="toggle-active-btn text-xs font-semibold" data-id="${r.custom_id}" data-active="${r.active}" style="color:${r.active ? 'var(--green)' : 'var(--text-dim)'}">
+          ${r.active ? 'Active' : 'Inactive'}
+        </button>
+      </td>
+      <td><button class="delete-map-btn text-xs font-semibold" style="color:var(--red)" data-id="${r.custom_id}">Delete</button></td>
+    </tr>
+  `).join('');
 
-const renderSettings = async () => {
-  main.innerHTML = '<p style="opacity:.6">Loading settings...</p>';
-  const cfg = await api('GET', '/settings');
-  const methods = (cfg.withdrawMethods||[]).map((m,i)=>
-    `<div class="method-row" data-idx="${i}">
-       <input placeholder="Method name" value="${m.name||''}">
-       <input type="number" step="any" placeholder="Min (₽)" value="${m.min||''}" style="max-width:120px">
-       <button class="btn btn-err" onclick="this.parentElement.remove()">✕</button>
-     </div>`).join('');
-  main.innerHTML = `
-    <div class="page-title"><i class="fas fa-cog"></i> App Settings</div>
-    <div class="card">
-      <div class="fg"><label>Bot Username (without @)</label><input id="s-botUsername" value="${cfg.botUsername||''}"></div>
-      <div class="fg"><label>Telegram Bot Token</label><input id="s-botToken" value="${cfg.botToken||''}"></div>
-      <div class="fg"><label>Ad Network Zone ID</label><input id="s-adZoneId" value="${cfg.adZoneId||''}"></div>
-      <div class="fg"><label>Welcome Message (shown to new users)</label><textarea id="s-welcomeMessage" rows="3">${cfg.welcomeMessage||''}</textarea></div>
-      <hr>
-      <h4>Earning Settings</h4>
-      <div class="fg"><label>Value per Ad (₽)</label><input type="number" step="any" id="s-adValue" value="${cfg.adValue||0}"></div>
-      <div class="fg"><label>Referral Bonus (₽)</label><input type="number" step="any" id="s-referralBonus" value="${cfg.referralBonus||0}"></div>
-      <div class="fg"><label>Daily Ad Limit</label><input type="number" id="s-dailyAdLimit" value="${cfg.dailyAdLimit||0}"></div>
-      <div class="fg"><label>Ads Before Break</label><input type="number" id="s-adsPerBreak" value="${cfg.adsPerBreak||0}"></div>
-      <div class="fg"><label>Break Duration (minutes)</label><input type="number" id="s-breakDuration" value="${cfg.breakDuration||0}"></div>
-      <hr>
-      <h4>Withdrawal Settings</h4>
-      <div class="fg"><label>Minimum Referrals Required to Withdraw</label><input type="number" id="s-minimumWithdrawReferrals" value="${cfg.minimumWithdrawReferrals||0}"></div>
-      <div class="fg"><label>Withdrawal Methods</label>
-        <div id="methods-container">${methods}</div>
-        <button class="btn btn-p" style="margin-top:8px" onclick="addMethodRow()"><i class="fas fa-plus"></i> Add Method</button>
-      </div>
-      <hr>
-      <button class="btn btn-ok btn-lg" onclick="saveSettings()"><i class="fas fa-save"></i> Save All Settings</button>
-    </div>`;
-};
+  document.querySelectorAll('.toggle-active-btn').forEach(b => b.addEventListener('click', async () => {
+    const newActive = b.dataset.active !== 'true';
+    try {
+      await adminApi(`/api/admin/service-map/${b.dataset.id}/toggle`, { method:'POST', body: JSON.stringify({ active: newActive }) });
+      await loadMappedServices();
+    } catch(e){ alert(e.message); }
+  }));
+  document.querySelectorAll('.delete-map-btn').forEach(b => b.addEventListener('click', async () => {
+    if (!confirm('Remove this mapping? Users will no longer see it.')) return;
+    try {
+      await adminApi(`/api/admin/service-map/${b.dataset.id}`, { method:'DELETE' });
+      await loadMappedServices();
+      await loadProviderServices();
+    } catch(e){ alert(e.message); }
+  }));
+}
 
-window.addMethodRow = () => {
-  document.getElementById('methods-container').insertAdjacentHTML('beforeend',
-    `<div class="method-row"><input placeholder="Method name"><input type="number" step="any" placeholder="Min (₽)" style="max-width:120px">
-     <button class="btn btn-err" onclick="this.parentElement.remove()">✕</button></div>`);
-};
+async function loadProviderServices(){
+  const tbody = document.getElementById('provider-services-tbody');
+  tbody.innerHTML = `<tr><td colspan="8" style="color:var(--text-dim)">Loading from provider…</td></tr>`;
+  try {
+    const services = await adminApi('/api/admin/provider-services');
+    tbody.innerHTML = services.map(s => {
+      const mapped = mappedByProviderId[String(s.service)];
+      const suggestedCustomId = mapped ? mapped.custom_id : '';
+      const suggestedRate = mapped ? mapped.rate : s.rate;
+      return `
+      <tr data-provider-id="${s.service}">
+        <td class="font-mono">${s.service}</td>
+        <td>${s.name}</td>
+        <td>${s.category || '—'}</td>
+        <td>৳${Number(s.rate).toFixed(2)}</td>
+        <td>${s.min} / ${s.max}</td>
+        <td><input type="text" class="mini-input rounded-lg px-2 py-1.5 text-xs outline-none custom-id-input" placeholder="e.g. 2001" value="${suggestedCustomId}" /></td>
+        <td><input type="number" step="0.01" class="mini-input rounded-lg px-2 py-1.5 text-xs outline-none rate-input" value="${suggestedRate}" /></td>
+        <td>
+          <button class="map-btn text-xs font-semibold px-3 py-1.5 rounded-lg btn-primary"
+            data-service='${JSON.stringify(s).replace(/'/g, "&apos;")}'>
+            ${mapped ? 'Update' : 'Publish'}
+          </button>
+        </td>
+      </tr>`;
+    }).join('');
 
-window.saveSettings = async () => {
-  const methods = [];
-  document.querySelectorAll('.method-row').forEach(row => {
-    const name=row.children[0].value, min=parseFloat(row.children[1].value);
-    if (name&&!isNaN(min)) methods.push({name,min});
-  });
-  const settings = {
-    botUsername: document.getElementById('s-botUsername').value,
-    botToken:    document.getElementById('s-botToken').value,
-    adZoneId:    document.getElementById('s-adZoneId').value,
-    welcomeMessage: document.getElementById('s-welcomeMessage').value,
-    adValue:     parseFloat(document.getElementById('s-adValue').value)||0,
-    referralBonus: parseFloat(document.getElementById('s-referralBonus').value)||0,
-    dailyAdLimit:  parseInt(document.getElementById('s-dailyAdLimit').value)||0,
-    adsPerBreak:   parseInt(document.getElementById('s-adsPerBreak').value)||0,
-    breakDuration: parseInt(document.getElementById('s-breakDuration').value)||0,
-    minimumWithdrawReferrals: parseInt(document.getElementById('s-minimumWithdrawReferrals').value)||0,
-    withdrawMethods: methods,
-  };
-  try { await api('POST','/settings',settings); toast('Settings saved!'); }
-  catch(e){ toast('Error saving settings.', false); }
-};
+    document.querySelectorAll('.map-btn').forEach(btn => btn.addEventListener('click', async () => {
+      const tr = btn.closest('tr');
+      const s = JSON.parse(btn.dataset.service.replace(/&apos;/g, "'"));
+      const customId = tr.querySelector('.custom-id-input').value.trim();
+      const rate = parseFloat(tr.querySelector('.rate-input').value);
+      if (!customId) return alert('Enter a custom ID for your users, e.g. 2001');
+      if (!rate || rate <= 0) return alert('Enter a valid rate');
+      try {
+        await adminApi('/api/admin/service-map', {
+          method:'POST',
+          body: JSON.stringify({
+            custom_id: customId, provider_service_id: String(s.service), name: s.name,
+            category: s.category, rate, min_qty: parseInt(s.min || 50, 10), max_qty: parseInt(s.max || 10000, 10),
+            refill: !!s.refill, cancel: !!s.cancel, active: true,
+          })
+        });
+        await loadMappedServices();
+        await loadProviderServices();
+      } catch(e){ alert(e.message); }
+    }));
+  } catch(e){
+    tbody.innerHTML = `<tr><td colspan="8" style="color:var(--red)">${e.message}</td></tr>`;
+  }
+}
+document.getElementById('refresh-provider-btn').addEventListener('click', loadProviderServices);
 
-const renderBroadcast = () => {
-  main.innerHTML = `
-    <div class="page-title"><i class="fas fa-bullhorn"></i> Broadcast Message</div>
-    <div class="card">
-      <p style="opacity:.7;margin-bottom:16px">Queue a message to be sent to all users. Requires a server-side worker (e.g., cron job) to process the broadcast queue from the database.</p>
-      <div class="fg"><label>Message</label><textarea id="bc-msg" rows="6" placeholder="Enter your message here..."></textarea></div>
-      <button class="btn btn-p btn-lg" onclick="sendBroadcast()"><i class="fas fa-paper-plane"></i> Queue Broadcast</button>
-    </div>`;
-};
+async function loadAll(){
+  await loadUsers();
+  await loadOrders();
+  await loadDeposits();
+  await loadMappedServices();
+  await loadProviderServices();
+}
 
-window.sendBroadcast = async () => {
-  const msg = document.getElementById('bc-msg').value.trim();
-  if (!msg) { toast('Please enter a message.', false); return; }
-  if (!confirm('Queue this broadcast to all users?')) return;
-  try { await api('POST','/broadcast',{message:msg}); toast('Broadcast queued!'); document.getElementById('bc-msg').value=''; }
-  catch(e){ toast('Error queuing broadcast.', false); }
-};
-
-// ── navigation ───────────────────────────────────────────────
-const pageMap = { dashboard:renderDashboard, users:renderUsers, withdrawals:renderWithdrawals,
-                  history:renderHistory, tasks:renderTasks, settings:renderSettings, broadcast:renderBroadcast };
-
-const initAdmin = () => {
-  const navItems = document.querySelectorAll('#nav-menu li');
-  const sidebar  = document.getElementById('sidebar');
-  const overlay  = document.getElementById('overlay');
-  const sbToggle = document.getElementById('sb-toggle');
-  const sbClose  = document.getElementById('sb-close');
-  const pgTitle  = document.getElementById('page-title');
-
-  navItems.forEach(li => {
-    li.addEventListener('click', () => {
-      navItems.forEach(x=>x.classList.remove('active'));
-      li.classList.add('active');
-      pgTitle.textContent = li.textContent.trim();
-      pageMap[li.dataset.page]?.();
-      sidebar.classList.remove('open');
-      overlay.classList.remove('show');
-    });
-  });
-
-  sbToggle.addEventListener('click', () => { sidebar.classList.add('open'); overlay.classList.add('show'); });
-  sbClose.addEventListener('click',  () => { sidebar.classList.remove('open'); overlay.classList.remove('show'); });
-  overlay.addEventListener('click',  () => { sidebar.classList.remove('open'); overlay.classList.remove('show'); });
-
-  renderDashboard();
-};
+bootstrap();
 </script>
 </body>
 </html>
