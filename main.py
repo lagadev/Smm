@@ -5,30 +5,30 @@ Everything (models, schemas, auth, routes, admin routes, provider integration)
 lives in this one file on purpose, to keep the project to four files total:
 main.py, requirements.txt, index/index.html, admin/admin.html.
 
-Run locally:
-    uvicorn main:app --reload --port 8000
+Database: SQLite only (file: smmpanel.db, created automatically next to this
+script). No PostgreSQL, no psycopg2, nothing to install for the database —
+Python's built-in sqlite3 driver handles everything through SQLAlchemy.
 
-Deploy on Render:
-    Build command : pip install -r requirements.txt
-    Start command : uvicorn main:app --host 0.0.0.0 --port $PORT
+Run locally / in Termux:
+    python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
-Environment variables:
-    DATABASE_URL         - PostgreSQL connection string
-    JWT_SECRET           - secret used to sign user JWTs
-    BOT_TOKEN            - Telegram bot token (validates Telegram WebApp initData)
-    UPSTREAM_API_KEY     - YOUR api key at your upstream provider (smmgen.com)
-    UPSTREAM_BASE_URL    - your upstream provider's endpoint (default: https://smmgen.com/api/v2)
-    ADMIN_TELEGRAM_IDS   - comma-separated Telegram user IDs allowed into /admin. No password —
-                            admin.html logs in with Telegram, same as the user app, and the
-                            backend checks the logged-in telegram_id against this list.
+────────────────────────────────────────────────────────────────────────
+CONFIG IS HARDCODED BELOW — NO ENVIRONMENT VARIABLES
+────────────────────────────────────────────────────────────────────────
+Edit the CONFIG block right under these imports and put your real values
+in directly (as plain Python strings/numbers). Nothing is read from the
+environment. This is the simplest setup for a single-server / Termux /
+personal deployment. Just remember: if you put this file in a public
+GitHub repo, your bot token and API keys are now in that repo — keep it
+private, or swap back to environment variables for a public/shared repo.
 
 ────────────────────────────────────────────────────────────────────────
 TWO DIFFERENT "PROVIDER" THINGS IN THIS PROJECT — READ THIS CAREFULLY
 ────────────────────────────────────────────────────────────────────────
 1) UPSTREAM PROVIDER (where YOUR orders actually get fulfilled)
-   This is smmgen.com (UPSTREAM_BASE_URL). Your backend calls this with
-   YOUR UPSTREAM_API_KEY whenever a user places an order or checks status.
-   Your users never see this URL or key.
+   This is smmgen.com (UPSTREAM_BASE_URL below). Your backend calls this
+   with YOUR UPSTREAM_API_KEY whenever a user places an order or checks
+   status. Your users never see this URL or key.
 
 2) YOUR OWN CHILD-PROVIDER API (this app, exposed at POST /api/v2)
    Your panel *is itself* a provider to whoever you give access to — e.g.
@@ -37,12 +37,9 @@ TWO DIFFERENT "PROVIDER" THINGS IN THIS PROJECT — READ THIS CAREFULLY
    personal `api_key` your panel generated for their account (see
    /api/profile), and call:
 
-       POST https://<your-render-app>.onrender.com/api/v2
+       POST http://<your-server>/api/v2
        key=<their personal api_key>
        action=services | add | status | balance
-
-   This is the "child provider" URL you mentioned
-   (e.g. https://smmprovider.onrender.com/api/v2 once deployed).
 
 ────────────────────────────────────────────────────────────────────────
 CUSTOM SERVICE-ID MAPPING (unchanged from before)
@@ -53,6 +50,11 @@ Manage it from admin.html -> Services tab.
 """
 
 import os
+# Anchor all file paths to this script's own folder, not the process's
+# current working directory — this matters on Termux/Render alike, so
+# "index/index.html" and the SQLite file always resolve correctly no
+# matter where you launch uvicorn from.
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 import hmac
 import hashlib
 import secrets
@@ -74,34 +76,43 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import sessionmaker, declarative_base, Session, relationship
 
-# ──────────────────────────────────────────────────────────────────────────
-# Config
-# ──────────────────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════
+# ✏️  CONFIG — EDIT THESE VALUES DIRECTLY. NO ENV VARS ARE USED.
+# ══════════════════════════════════════════════════════════════════════
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/smmpanel")
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-
-JWT_SECRET = os.getenv("JWT_SECRET", "change-this-secret")
+# Secret used to sign login tokens (JWT). Change this to any long random string.
+JWT_SECRET = "change-this-secret-to-something-random"
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_DAYS = 30
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+# Your Telegram bot's token, from @BotFather. Needed to verify Telegram logins.
+BOT_TOKEN = "PUT_YOUR_BOT_TOKEN_HERE"
 
-# The UPSTREAM provider — where your orders actually get fulfilled.
-UPSTREAM_API_KEY = os.getenv("UPSTREAM_API_KEY", os.getenv("SMMGEN_API_KEY", ""))
-UPSTREAM_BASE_URL = os.getenv("UPSTREAM_BASE_URL", os.getenv("SMMGEN_BASE_URL", "https://smmgen.com/api/v2"))
+# The UPSTREAM provider — where your orders actually get fulfilled (e.g. smmgen.com).
+UPSTREAM_API_KEY = "PUT_YOUR_UPSTREAM_PROVIDER_API_KEY_HERE"
+UPSTREAM_BASE_URL = "https://smmgen.com/api/v2"
 
-# Telegram IDs allowed to use /admin — no password, Telegram login only.
-ADMIN_TELEGRAM_IDS = {
-    int(x.strip()) for x in os.getenv("ADMIN_TELEGRAM_IDS", "").split(",") if x.strip().isdigit()
-}
+# Telegram user IDs allowed into /admin — no password, Telegram login only.
+# Get your numeric Telegram ID by messaging @userinfobot.
+# Example with two admins: ADMIN_TELEGRAM_IDS = {123456789, 987654321}
+ADMIN_TELEGRAM_IDS = {123456789}
+
+# SQLite database file — created automatically next to this script.
+DATABASE_URL = "sqlite:///" + os.path.join(BASE_DIR, "smmpanel.db")
+
+# ══════════════════════════════════════════════════════════════════════
+# End of config
+# ══════════════════════════════════════════════════════════════════════
 
 # ──────────────────────────────────────────────────────────────────────────
-# Database setup
+# Database setup (SQLite)
 # ──────────────────────────────────────────────────────────────────────────
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    connect_args={"check_same_thread": False},  # required for SQLite + FastAPI's threaded requests
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -770,16 +781,30 @@ async def child_provider_api(
 
 @app.get("/")
 def serve_index():
-    return FileResponse("index/index.html")
+    return FileResponse(os.path.join(BASE_DIR, "index", "index.html"))
 
 
 @app.get("/admin")
 def serve_admin():
-    return FileResponse("admin/admin.html")
+    return FileResponse(os.path.join(BASE_DIR, "admin", "admin.html"))
 
 
-app.mount("/index", StaticFiles(directory="index"), name="index")
-app.mount("/admin-assets", StaticFiles(directory="admin"), name="admin-assets")
+INDEX_DIR = os.path.join(BASE_DIR, "index")
+ADMIN_DIR = os.path.join(BASE_DIR, "admin")
+
+if not os.path.isdir(INDEX_DIR):
+    raise RuntimeError(
+        f"Expected folder not found: {INDEX_DIR}. "
+        "Make sure index/index.html was committed and pushed to your repo."
+    )
+if not os.path.isdir(ADMIN_DIR):
+    raise RuntimeError(
+        f"Expected folder not found: {ADMIN_DIR}. "
+        "Make sure admin/admin.html was committed and pushed to your repo."
+    )
+
+app.mount("/index", StaticFiles(directory=INDEX_DIR), name="index")
+app.mount("/admin-assets", StaticFiles(directory=ADMIN_DIR), name="admin-assets")
 
 
 @app.get("/health")
