@@ -1,0 +1,16 @@
+{
+  "name": "telegrow",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:create": "wrangler d1 create telegrow-db",
+    "db:migrate": "wrangler d1 execute telegrow-db --file=./schema.sql --remote",
+    "db:migrate:local": "wrangler d1 execute telegrow-db --file=./schema.sql --local",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}

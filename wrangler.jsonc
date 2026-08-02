@@ -1,0 +1,29 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "telegrow",
+  "main": "worker.js",
+  "compatibility_date": "2025-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Serves index.html, /admin/index.html and everything in /assets as static files.
+  // The Worker's fetch handler intercepts /api/* before assets are checked.
+  "assets": {
+    "directory": "./",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "telegrow-db",
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+    }
+  ],
+
+  // Non-secret vars can stay here. For BOT_TOKEN / ADMIN_PASSWORD in production,
+  // prefer: wrangler secret put BOT_TOKEN  /  wrangler secret put ADMIN_PASSWORD
+  "vars": {
+    "ENV": "production"
+  }
+}
