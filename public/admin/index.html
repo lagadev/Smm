@@ -92,7 +92,7 @@
             <option value="Cancelled">Cancelled</option>
           </select>
         </div>
-        <div class="table-wrap"><table class="admin-table" id="orders-table"><thead><tr><th>ID</th><th>User</th><th>Service</th><th>Link</th><th>Qty</th><th>Charge</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+        <div class="table-wrap"><table class="admin-table" id="orders-table"><thead><tr><th>ID</th><th>User</th><th>Service</th><th>Link</th><th>Qty</th><th>Charge</th><th>Source</th><th>Provider #</th><th>Status</th><th>Date</th></tr></thead><tbody></tbody></table></div>
       </div>
     </section>
 
@@ -121,13 +121,32 @@
         </div>
       </div>
       <div class="panel">
-        <h3 style="margin-top:0;">Ads &amp; Rewards</h3>
+        <div class="panel-head"><h3 style="margin:0;">Ads &amp; Rewards</h3></div>
         <div class="form-grid">
+          <div><label>Ad Earning System</label>
+            <select class="field" id="set-ads_earning_enabled">
+              <option value="1">Enabled — users can watch ads to earn</option>
+              <option value="0">Disabled — users are directed to Contact Admin</option>
+            </select>
+          </div>
           <div><label>Monetag Zone ID</label><input class="field" id="set-monetag_zone_id"></div>
           <div><label>Reward per Ad</label><input class="field" id="set-ad_reward" type="number" step="0.01"></div>
           <div><label>Daily Ad Limit</label><input class="field" id="set-daily_ad_limit" type="number"></div>
           <div><label>Cooldown (minutes)</label><input class="field" id="set-cooldown_minutes" type="number"></div>
-          <div><label>Referral Reward</label><input class="field" id="set-referral_reward" type="number" step="0.01"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3 style="margin:0;">Upstream Provider — smmgen.com</h3></div>
+        <p class="card-sub" style="margin-top:-8px;">When set, new orders are automatically placed with your provider. Also map each service's "Provider Service ID" from the Services tab.</p>
+        <div class="form-grid">
+          <div><label>Auto-place Orders</label>
+            <select class="field" id="set-provider_auto_order">
+              <option value="1">Enabled — send orders to provider automatically</option>
+              <option value="0">Disabled — manual processing only</option>
+            </select>
+          </div>
+          <div><label>Provider API URL</label><input class="field" id="set-provider_api_url" placeholder="https://my.smmgen.com/api/v2"></div>
+          <div class="full"><label>Provider API Key</label><input class="field" id="set-provider_api_key" type="password"></div>
         </div>
       </div>
       <div class="panel">
