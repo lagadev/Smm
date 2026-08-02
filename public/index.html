@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -14,9 +13,8 @@
   (function(){
     try{
       var tg = window.Telegram.WebApp;
-      document.documentElement.setAttribute('data-theme','dark');
-      tg.setHeaderColor && tg.setHeaderColor('#0A0F0D');
-      tg.setBackgroundColor && tg.setBackgroundColor('#0A0F0D');
+      tg.setHeaderColor && tg.setHeaderColor('#F6F7F9');
+      tg.setBackgroundColor && tg.setBackgroundColor('#F6F7F9');
     }catch(e){}
   })();
 </script>
@@ -42,7 +40,7 @@
     <div id="profile-pic"><i class="fa-solid fa-user"></i></div>
   </div>
 
-  <!-- ===== HOME VIEW ===== -->
+  <!-- ===== HOME VIEW — balance + API token only ===== -->
   <section id="view-home" class="view">
     <div class="balance-card">
       <div class="balance-top">
@@ -50,38 +48,25 @@
           <div class="balance-label">Wallet Balance</div>
           <div class="balance-amount"><span id="currency-symbol">৳</span><span id="total-balance">0.00</span></div>
         </div>
-        <i class="fa-solid fa-wallet" style="font-size:22px;color:var(--primary);position:relative;z-index:1;"></i>
+        <i class="fa-solid fa-wallet" style="font-size:20px;color:rgba(255,255,255,.85);"></i>
       </div>
-      <div class="sparkline" id="sparkline"></div>
       <div class="balance-actions">
         <button class="btn btn-primary" onclick="switchView('order')"><i class="fa-solid fa-bolt"></i> New Order</button>
         <button class="btn btn-outline" onclick="switchView('funds')"><i class="fa-solid fa-plus"></i> Add Funds</button>
       </div>
     </div>
 
-    <div class="stats-grid">
-      <div class="stat-item"><div class="icon"><i class="fa-solid fa-bag-shopping"></i></div><div class="value" id="stat-orders">0</div><div class="label">Total Orders</div></div>
-      <div class="stat-item"><div class="icon"><i class="fa-solid fa-rectangle-ad"></i></div><div class="value" id="stat-ads-today">0/15</div><div class="label">Ads Today</div></div>
-      <div class="stat-item"><div class="icon"><i class="fa-solid fa-users"></i></div><div class="value" id="stat-referrals">0</div><div class="label">Referrals</div></div>
-    </div>
-
-    <div class="card">
-      <h3 class="card-title">Quick Actions</h3>
-      <p class="card-sub">Everything you need, in one tap.</p>
-      <div style="display:flex;flex-direction:column;gap:10px;">
-        <button class="list-row" style="width:100%;border:1px solid var(--border);cursor:pointer;background:var(--surface-2);" onclick="switchView('history')">
-          <div class="details"><span class="title"><i class="fa-solid fa-clock-rotate-left" style="color:var(--primary);margin-right:8px;"></i>Order &amp; Fund History</span></div>
-          <i class="fa-solid fa-chevron-right text-dim"></i>
-        </button>
-        <button class="list-row" style="width:100%;border:1px solid var(--border);cursor:pointer;background:var(--surface-2);" onclick="showModal('inviteModal')">
-          <div class="details"><span class="title"><i class="fa-solid fa-user-plus" style="color:var(--primary);margin-right:8px;"></i>Invite &amp; Earn</span></div>
-          <i class="fa-solid fa-chevron-right text-dim"></i>
-        </button>
-        <button class="list-row" style="width:100%;border:1px solid var(--border);cursor:pointer;background:var(--surface-2);" onclick="showModal('supportModal')">
-          <div class="details"><span class="title"><i class="fa-solid fa-headset" style="color:var(--primary);margin-right:8px;"></i>Contact Support</span></div>
-          <i class="fa-solid fa-chevron-right text-dim"></i>
-        </button>
+    <div class="token-card">
+      <h3 class="card-title">API Access</h3>
+      <p class="card-sub">Place orders programmatically using your personal key.</p>
+      <div class="token-row">
+        <code id="api-token-display">••••••••••••••••••••••••</code>
+        <div class="token-actions">
+          <button class="btn btn-sm btn-ghost" id="copy-token-btn" title="Copy"><i class="fa-solid fa-copy"></i></button>
+          <button class="btn btn-sm btn-ghost" id="regen-token-btn" title="Regenerate"><i class="fa-solid fa-rotate"></i></button>
+        </div>
       </div>
+      <p class="token-hint">Base URL: <code id="api-base-url">/api/v2</code> · Actions: <code>services</code>, <code>add</code>, <code>status</code>, <code>balance</code></p>
     </div>
   </section>
 
@@ -94,18 +79,16 @@
       <div class="pill-row" id="category-pills"></div>
 
       <div class="order-steps">
-        <div class="step" id="step-service">
+        <div class="step">
           <div class="step-num">1</div>
           <div class="step-body">
             <div class="step-label">Service</div>
-            <select class="field" id="service-select">
-              <option value="">Select a service</option>
-            </select>
+            <select class="field" id="service-select"><option value="">Select a service</option></select>
             <div class="service-meta" id="service-meta"></div>
           </div>
         </div>
 
-        <div class="step" id="step-link">
+        <div class="step">
           <div class="step-num">2</div>
           <div class="step-body">
             <div class="step-label">Link</div>
@@ -113,7 +96,7 @@
           </div>
         </div>
 
-        <div class="step" id="step-qty">
+        <div class="step">
           <div class="step-num">3</div>
           <div class="step-body">
             <div class="step-label">Quantity</div>
@@ -121,7 +104,7 @@
           </div>
         </div>
 
-        <div class="step" id="step-confirm">
+        <div class="step">
           <div class="step-num">4</div>
           <div class="step-body">
             <div class="step-label">Review &amp; Confirm</div>
@@ -144,12 +127,7 @@
 
   <!-- ===== ADD FUNDS VIEW ===== -->
   <section id="view-funds" class="view hidden">
-    <div class="balance-card">
-      <div class="balance-label">Wallet Balance</div>
-      <div class="balance-amount"><span class="currency-symbol">৳</span><span class="total-balance-mirror">0.00</span></div>
-    </div>
-
-    <div class="card">
+    <div class="card" id="ads-earning-card">
       <h3 class="card-title">Watch &amp; Earn</h3>
       <p class="card-sub" id="ad-reward-copy">Watch a short ad to add funds to your wallet.</p>
       <button class="btn btn-primary btn-block pulsing" id="watch-ad-button"><i class="fa-solid fa-play"></i><span>Watch Ad</span></button>
@@ -159,9 +137,14 @@
       </div>
     </div>
 
+    <div class="card hidden" id="ads-disabled-card">
+      <div class="notice-box"><i class="fa-solid fa-circle-info"></i><span>Ad earning is currently paused by the admin. Please contact support below to add funds.</span></div>
+    </div>
+
     <div class="card">
-      <h3 class="card-title">Other Ways to Earn</h3>
-      <div id="bonus-tasks-list"></div>
+      <h3 class="card-title">Add Funds via Admin</h3>
+      <p class="card-sub">Send bKash / Nagad / Binance and our admin will credit your wallet manually.</p>
+      <button class="btn btn-primary btn-block" id="contact-admin-fund-button"><i class="fa-brands fa-telegram"></i><span>Contact Admin to Add Funds</span></button>
     </div>
   </section>
 
@@ -179,37 +162,19 @@
 
 </div>
 
-<!-- ===== Nav bar ===== -->
+<!-- ===== Nav bar (4 tabs — Support merged into Funds) ===== -->
 <div class="nav-bar">
   <button class="nav-button active" data-view="home" onclick="switchView('home')"><i class="fa-solid fa-house"></i><span>Home</span></button>
   <button class="nav-button" data-view="order" onclick="switchView('order')"><i class="fa-solid fa-bolt"></i><span>Order</span></button>
   <button class="nav-button" data-view="funds" onclick="switchView('funds')"><i class="fa-solid fa-wallet"></i><span>Funds</span></button>
   <button class="nav-button" data-view="history" onclick="switchView('history')"><i class="fa-solid fa-clock-rotate-left"></i><span>History</span></button>
-  <button class="nav-button" data-view="support" onclick="showModal('supportModal')"><i class="fa-solid fa-headset"></i><span>Support</span></button>
 </div>
 
 <!-- ===== Modals ===== -->
-<div id="supportModal" class="modal">
-  <div class="modal-content">
-    <div class="modal-head"><h3 class="card-title" style="margin:0;">Support</h3><span class="close-button" onclick="closeModal('supportModal')">&times;</span></div>
-    <p class="card-sub">Have a question about an order or your balance? Our team is one tap away.</p>
-    <button class="btn btn-primary btn-block" id="admin-contact-button"><i class="fa-brands fa-telegram"></i><span>Contact Admin</span></button>
-  </div>
-</div>
-
-<div id="inviteModal" class="modal">
-  <div class="modal-content">
-    <div class="modal-head"><h3 class="card-title" style="margin:0;">Invite &amp; Earn</h3><span class="close-button" onclick="closeModal('inviteModal')">&times;</span></div>
-    <p class="card-sub">Share your link — you earn a bonus for every friend who joins.</p>
-    <button class="btn btn-primary btn-block" id="copy-link-button"><i class="fa-solid fa-copy"></i><span>Copy Link</span></button>
-    <button class="btn btn-outline btn-block" id="share-link-button" style="margin-top:10px;"><i class="fa-solid fa-share-nodes"></i><span>Share Link</span></button>
-  </div>
-</div>
-
 <div id="welcomeModal" class="modal">
   <div class="modal-content">
     <div class="modal-head"><h3 class="card-title" style="margin:0;" id="welcome-title">Welcome</h3><span class="close-button" onclick="closeModal('welcomeModal')">&times;</span></div>
-    <p id="welcome-message" style="line-height:1.7;font-size:14.5px;white-space:pre-wrap;color:var(--text-dim);"></p>
+    <p id="welcome-message" style="line-height:1.7;font-size:14px;white-space:pre-wrap;color:var(--text-dim);"></p>
     <button class="btn btn-primary btn-block" onclick="closeModal('welcomeModal')">Got it</button>
   </div>
 </div>
