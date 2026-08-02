@@ -1,5 +1,5 @@
 // =====================================================
-// TeleGrow — Mini App front-end logic
+// TeleGrow — Mini App front-end logic (v2)
 // =====================================================
 const API = ""; // same-origin Worker
 
@@ -10,7 +10,6 @@ let state = {
   settings: {},
   categories: [],
   services: [],
-  activeCategoryId: null,
   selectedService: null,
 };
 
@@ -19,12 +18,10 @@ function escapeHTML(s){ if(!s) return ''; return String(s).replace(/&/g,'&amp;')
 function money(n){ return (Number(n)||0).toFixed(2); }
 function safeAlert(msg){ if(tg && tg.showAlert){ tg.showAlert(msg); } else { alert(msg); } }
 function haptic(type){ try{ tg && tg.HapticFeedback && tg.HapticFeedback.notificationOccurred(type); }catch(e){} }
+function safeTgOpen(link){ if (tg && tg.openTelegramLink) tg.openTelegramLink(link); else window.open(link, '_blank'); }
 
 async function api(path, opts = {}) {
-  const res = await fetch(API + path, {
-    ...opts,
-    headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
-  });
+  const res = await fetch(API + path, { ...opts, headers: { "Content-Type": "application/json", ...(opts.headers || {}) } });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data.ok === false) throw new Error(data.error || `Request failed (${res.status})`);
   return data;
@@ -48,7 +45,7 @@ function hidePreloader() {
     el('preloader').style.display = 'none';
     el('preloader-footer').style.display = 'none';
     document.querySelector('.container').style.display = 'block';
-  }, 400);
+  }, 350);
 }
 
 // ---------------- View switching ----------------
@@ -56,7 +53,7 @@ function switchView(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
   el('view-' + name).classList.remove('hidden');
   document.querySelectorAll('.nav-button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
-  if (name === 'history') { renderOrdersHistory(); renderFundsHistory(); }
+  if (name === 'history') { renderOrdersHistory(); renderTransactionsHistory(); }
 }
 function switchHistoryTab(tab) {
   document.querySelectorAll('#view-history .pill').forEach(p => p.classList.toggle('active', p.dataset.tab === tab));
@@ -73,8 +70,7 @@ async function authenticate() {
   if (tg && tg.initData) {
     body = { initData: tg.initData };
   } else {
-    // Local/dev preview fallback (outside Telegram)
-    body = { debugUser: { id: 999999, first_name: 'Guest', username: 'guest' } };
+    body = { debugUser: { id: 999999, first_name: 'Guest', username: 'guest' } }; // dev/preview fallback
   }
   const { user } = await api('/api/auth', { method: 'POST', body: JSON.stringify(body) });
   state.user = user;
@@ -89,7 +85,12 @@ async function loadSettings() {
   el('ad-reward-label').textContent = `+${sym}${money(settings.ad_reward)} / ad`;
   el('ad-reward-copy').textContent = `Watch a short ad to earn ${sym}${money(settings.ad_reward)} instantly. Up to ${settings.daily_ad_limit} ads per day.`;
   el('preloader-channel-link').href = settings.channel_link || '#';
-  loadMonetagSDK(settings.monetag_zone_id);
+  el('api-base-url').textContent = window.location.origin + '/api/v2';
+
+  el('ads-earning-card').classList.toggle('hidden', !settings.ads_earning_enabled);
+  el('ads-disabled-card').classList.toggle('hidden', !!settings.ads_earning_enabled);
+
+  if (settings.ads_earning_enabled) loadMonetagSDK(settings.monetag_zone_id);
 }
 
 function loadMonetagSDK(zoneId){
@@ -103,30 +104,34 @@ function loadMonetagSDK(zoneId){
 }
 
 // ---------------- Home ----------------
-function renderSparkline(){
-  const bars = 14;
-  const wrap = el('sparkline');
-  wrap.innerHTML = '';
-  for (let i=0;i<bars;i++){
-    const h = 20 + Math.round(Math.random()*80);
-    const bar = document.createElement('i');
-    bar.style.height = h + '%';
-    wrap.appendChild(bar);
+function updateBalanceUI(){ el('total-balance').textContent = money(state.user.balance); }
+
+function updateTokenUI(){
+  const token = state.user.api_token || '';
+  const masked = token ? token.slice(0, 8) + '••••••••••••••••' : '—';
+  el('api-token-display').textContent = masked;
+  el('api-token-display').dataset.full = token;
+}
+function copyToken(){
+  const token = state.user.api_token;
+  if (!token) return;
+  navigator.clipboard.writeText(token).then(() => safeAlert('API key copied!')).catch(() => safeAlert('Could not copy key.'));
+}
+async function regenerateToken(){
+  if (tg && tg.showConfirm) {
+    tg.showConfirm('Regenerate your API key? The old key will stop working immediately.', async (ok) => { if (ok) await doRegenerate(); });
+  } else if (confirm('Regenerate your API key? The old key will stop working immediately.')) {
+    await doRegenerate();
   }
 }
-
-function updateBalanceUI(){
-  const bal = money(state.user.balance);
-  el('total-balance').textContent = bal;
-  document.querySelectorAll('.total-balance-mirror').forEach(n => n.textContent = bal);
-}
-
-async function refreshStats(){
+async function doRegenerate(){
   try{
-    const { orders } = await api(`/api/orders?telegram_id=${state.user.telegram_id}`);
-    el('stat-orders').textContent = orders.length;
-    state.orders = orders;
-  }catch(e){}
+    const { api_token } = await api('/api/user/regenerate-token', { method: 'POST', body: JSON.stringify({ telegram_id: state.user.telegram_id }) });
+    state.user.api_token = api_token;
+    updateTokenUI();
+    haptic('success');
+    safeAlert('New API key generated.');
+  }catch(e){ safeAlert(e.message); }
 }
 
 // ---------------- New Order ----------------
@@ -144,14 +149,8 @@ function renderCategoryPills(){
 }
 
 async function selectCategory(id, btnEl){
-  state.activeCategoryId = id;
   document.querySelectorAll('#category-pills .pill').forEach(p => p.classList.remove('active'));
   if (btnEl) btnEl.classList.add('active');
-  else {
-    const idx = state.categories.findIndex(c => c.id === id);
-    const btns = document.querySelectorAll('#category-pills .pill');
-    if (btns[idx]) btns[idx].classList.add('active');
-  }
   const { services } = await api(`/api/services?category_id=${id}`);
   state.services = services;
   const sel = el('service-select');
@@ -180,7 +179,6 @@ function recomputeOrderSummary(){
   const qty = parseInt(el('order-qty').value, 10);
   const link = el('order-link').value.trim();
   const sym = state.settings.currency_symbol || '৳';
-
   if (!s){ clearOrderSummary(); return; }
 
   const cat = state.categories.find(c => c.id === s.category_id);
@@ -230,7 +228,6 @@ async function confirmOrder(){
     el('order-link').value = '';
     el('order-qty').value = '';
     clearOrderSummary();
-    refreshStats();
     switchView('home');
   }catch(e){
     haptic('error');
@@ -246,19 +243,14 @@ async function confirmOrder(){
 async function watchAd(){
   const zoneId = state.settings.monetag_zone_id;
   const adFn = zoneId ? window[`show_${zoneId}`] : null;
-
   el('ad-loader-overlay').style.display = 'flex';
 
   const finish = async () => {
     try{
-      const res = await api('/api/ad-reward', {
-        method: 'POST',
-        body: JSON.stringify({ telegram_id: state.user.telegram_id }),
-      });
+      const res = await api('/api/ad-reward', { method: 'POST', body: JSON.stringify({ telegram_id: state.user.telegram_id }) });
       state.user.balance = res.balance;
       updateBalanceUI();
       el('ads-watched-label').textContent = `${res.watched_today} / ${res.daily_limit} today`;
-      el('stat-ads-today').textContent = `${res.watched_today}/${res.daily_limit}`;
       haptic('success');
       safeAlert(`+${state.settings.currency_symbol}${money(res.reward)} added to your wallet!`);
     }catch(e){
@@ -269,18 +261,15 @@ async function watchAd(){
   };
 
   if (typeof adFn === 'function'){
-    adFn().then(finish).catch(() => {
-      el('ad-loader-overlay').style.display = 'none';
-      safeAlert('Ad could not be loaded. Please try again.');
-    });
+    adFn().then(finish).catch(() => { el('ad-loader-overlay').style.display = 'none'; safeAlert('Ad could not be loaded. Please try again.'); });
   } else {
-    // No ad zone configured yet — fall back gracefully in dev/preview
-    setTimeout(finish, 1200);
+    setTimeout(finish, 1200); // dev/preview fallback when no ad zone configured
   }
 }
 
 // ---------------- History ----------------
 function statusClass(s){ return (s || 'pending').toLowerCase(); }
+function emptyState(icon, text){ return `<div class="empty-state"><i class="fa-solid ${icon}"></i><p>${escapeHTML(text)}</p></div>`; }
 
 async function renderOrdersHistory(){
   try{
@@ -301,76 +290,40 @@ async function renderOrdersHistory(){
   }catch(e){}
 }
 
-async function renderFundsHistory(){
+async function renderTransactionsHistory(){
   try{
-    const { user } = await api(`/api/user?telegram_id=${state.user.telegram_id}`);
-    // transactions aren't exposed via a dedicated public endpoint yet beyond orders;
-    // ad rewards/orders are reconstructed client-side from orders + balance for now.
+    const { transactions } = await api(`/api/transactions?telegram_id=${state.user.telegram_id}`);
     const wrap = el('funds-history');
-    if (!state.orders) { wrap.innerHTML = emptyState('fa-coins', 'No transactions yet'); return; }
-    wrap.innerHTML = emptyState('fa-coins', 'Full transaction log coming soon — check Orders for charges.');
+    if (!transactions.length){ wrap.innerHTML = emptyState('fa-coins', 'No transactions yet'); return; }
+    const labels = { ad_reward: 'Ad Reward', order: 'Order Charge', admin_add: 'Admin Credit', admin_deduct: 'Admin Debit' };
+    wrap.innerHTML = transactions.map(t => `
+      <div class="history-item">
+        <div class="history-details">
+          <span class="name">${escapeHTML(labels[t.type] || t.type)}</span>
+          <span class="meta">${new Date(t.created_at).toLocaleString()}${t.note ? ' · ' + escapeHTML(t.note) : ''}</span>
+        </div>
+        <div class="history-amount">
+          <div class="amt" style="color:${t.amount >= 0 ? 'var(--success)' : 'var(--danger)'};">${t.amount >= 0 ? '+' : ''}${state.settings.currency_symbol}${money(t.amount)}</div>
+        </div>
+      </div>`).join('');
   }catch(e){}
-}
-
-function emptyState(icon, text){
-  return `<div class="empty-state"><i class="fa-solid ${icon}"></i><p>${escapeHTML(text)}</p></div>`;
-}
-
-// ---------------- Bonus / Invite ----------------
-function renderBonusList(){
-  const wrap = el('bonus-tasks-list');
-  const link = state.settings.channel_link || '#';
-  wrap.innerHTML = `
-    <div class="list-row">
-      <div class="details">
-        <span class="title"><i class="fa-brands fa-telegram" style="color:var(--primary);margin-right:8px;"></i>Join our update channel</span>
-      </div>
-      <button class="btn btn-sm btn-outline" onclick="safeTgOpen('${link}')">Open</button>
-    </div>`;
-}
-function safeTgOpen(link){ if (tg && tg.openTelegramLink) tg.openTelegramLink(link); else window.open(link, '_blank'); }
-
-function getReferralLink(){
-  const uname = state.settings.bot_username;
-  const tid = state.user.telegram_id;
-  return uname ? `https://t.me/${uname}?startapp=${tid}` : window.location.href;
-}
-function copyReferralLink(){
-  navigator.clipboard.writeText(getReferralLink())
-    .then(() => safeAlert('Referral link copied!'))
-    .catch(() => safeAlert('Could not copy link.'));
-}
-function shareReferralLink(){
-  const link = getReferralLink();
-  const text = `Grow your Telegram, YouTube, Facebook, Instagram &amp; TikTok with TeleGrow! Join with my link:\n${link}`;
-  if (tg && tg.openTelegramLink) {
-    tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`);
-  } else {
-    window.open(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`, '_blank');
-  }
 }
 
 // ---------------- Init ----------------
 async function init(){
   const preloaderDone = runPreloader();
-
   try{
     await authenticate();
     await loadSettings();
 
-    if (state.user.banned) {
-      showModal('multiAccountModal');
-      return;
-    }
+    if (state.user.banned) { showModal('multiAccountModal'); return; }
 
     const { categories } = await api('/api/categories');
     state.categories = categories;
     renderCategoryPills();
 
     updateBalanceUI();
-    renderSparkline();
-    refreshStats();
-    renderBonusList();
+    updateTokenUI();
 
     const user = (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) || { first_name: state.user.first_name, photo_url: state.user.photo_url };
     if (user.photo_url) el('profile-pic').innerHTML = `<img src="${user.photo_url}" alt="">`;
@@ -381,9 +334,9 @@ async function init(){
     el('order-qty').addEventListener('input', recomputeOrderSummary);
     el('confirm-order-button').addEventListener('click', confirmOrder);
     el('watch-ad-button').addEventListener('click', watchAd);
-    el('admin-contact-button').addEventListener('click', () => safeTgOpen(state.settings.support_link));
-    el('copy-link-button').addEventListener('click', copyReferralLink);
-    el('share-link-button').addEventListener('click', shareReferralLink);
+    el('copy-token-btn').addEventListener('click', copyToken);
+    el('regen-token-btn').addEventListener('click', regenerateToken);
+    el('contact-admin-fund-button').addEventListener('click', () => safeTgOpen(state.settings.support_link));
 
     safeTgAction();
 
@@ -391,9 +344,11 @@ async function init(){
       el('welcome-title').textContent = `Welcome to ${state.settings.site_name || 'TeleGrow'}!`;
       el('welcome-message').textContent =
         `Order real, high-quality engagement for Telegram, YouTube, Facebook, Instagram &amp; TikTok.\n\n` +
-        `💰 No balance? Watch ads to earn ${state.settings.currency_symbol}${money(state.settings.ad_reward)} per ad, up to ${state.settings.daily_ad_limit}/day.\n` +
-        `⚡ Orders are processed after admin review.\n` +
-        `🎁 Invite friends to earn ${state.settings.currency_symbol}${money(state.settings.referral_reward)} per referral.`;
+        (state.settings.ads_earning_enabled
+          ? `💰 No balance? Watch ads to earn ${state.settings.currency_symbol}${money(state.settings.ad_reward)} per ad, up to ${state.settings.daily_ad_limit}/day.\n`
+          : `💰 To add funds, use the "Contact Admin" button on the Funds tab.\n`) +
+        `⚡ Orders are processed automatically where available, or reviewed by admin.\n` +
+        `🔑 Use your personal API key on the Home tab to place orders programmatically.`;
       showModal('welcomeModal');
       sessionStorage.setItem('tg_welcomed', 'true');
     }
