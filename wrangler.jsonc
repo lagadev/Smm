@@ -8,7 +8,7 @@
 // Serves index.html, /admin/index.html and everything in /assets as static files.
 // The Worker's fetch handler intercepts /api/* before assets are checked.
 "assets": {
-"directory": ".public/",
+"directory": "./public",
 "binding": "ASSETS",
 "not_found_handling": "single-page-application"
 },
