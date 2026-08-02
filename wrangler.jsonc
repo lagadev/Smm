@@ -8,10 +8,18 @@
   // Serves index.html, /admin/index.html and everything in /assets as static files.
   // The Worker's fetch handler intercepts /api/* before assets are checked.
   "assets": {
-    "directory": "./",
-    "binding": "ASSETS",
-    "not_found_handling": "single-page-application"
-  },
+  "directory": ".",
+  "binding": "ASSETS",
+  "not_found_handling": "single-page-application",
+  "exclude": [
+    "node_modules/**",
+    "*.json",
+    "*.md",
+    "*.sql",
+    "worker.js",
+    "wrangler.jsonc"
+  ]
+}
 
   "d1_databases": [
     {
