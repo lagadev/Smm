@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TeleGrow Admin</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../assets/css/style.css">
+<link rel="stylesheet" href="../assets/css/admin.css">
+</head>
+<body class="admin-body" data-theme="dark">
+
+<!-- ===== Login ===== -->
+<div id="admin-login">
+  <div class="login-card">
+    <div class="brand-mark">TG</div>
+    <h2>TeleGrow Admin</h2>
+    <p>Enter your admin password to continue.</p>
+    <input class="field" type="password" id="login-password" placeholder="Admin password">
+    <button class="btn btn-primary btn-block" id="login-button"><span class="button-text">Login</span><div class="spinner hidden"></div></button>
+    <div id="login-error">Incorrect password. Please try again.</div>
+  </div>
+</div>
+
+<!-- ===== Shell ===== -->
+<div class="admin-shell hidden" id="admin-shell">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand"><div class="brand-mark">TG</div></div>
+    <button class="side-link active" data-tab="dashboard"><i class="fa-solid fa-gauge"></i> Dashboard</button>
+    <button class="side-link" data-tab="categories"><i class="fa-solid fa-layer-group"></i> Categories</button>
+    <button class="side-link" data-tab="services"><i class="fa-solid fa-list-check"></i> Services</button>
+    <button class="side-link" data-tab="orders"><i class="fa-solid fa-bag-shopping"></i> Orders</button>
+    <button class="side-link" data-tab="users"><i class="fa-solid fa-users"></i> Users</button>
+    <button class="side-link" data-tab="settings"><i class="fa-solid fa-gear"></i> Settings</button>
+    <button class="side-link logout" id="logout-button"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</button>
+  </aside>
+
+  <main class="admin-main">
+    <div class="admin-header">
+      <div>
+        <h1 id="page-title">Dashboard</h1>
+        <p id="page-sub">Overview of your TeleGrow panel</p>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="menu-toggle"><i class="fa-solid fa-bars"></i></button>
+    </div>
+
+    <!-- Dashboard -->
+    <section class="admin-tab active" id="tab-dashboard">
+      <div class="stat-cards">
+        <div class="stat-card"><div class="label">Total Users</div><div class="value" id="stat-users">0</div></div>
+        <div class="stat-card"><div class="label">Total Orders</div><div class="value" id="stat-orders">0</div></div>
+        <div class="stat-card"><div class="label">Pending Orders</div><div class="value" id="stat-pending">0</div></div>
+        <div class="stat-card"><div class="label">Total Revenue</div><div class="value" id="stat-revenue">৳0</div></div>
+        <div class="stat-card"><div class="label">User Balances (Liability)</div><div class="value" id="stat-liability">৳0</div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>Recent Orders</h3><button class="btn btn-sm btn-outline" data-tab-link="orders">View all</button></div>
+        <div class="table-wrap"><table class="admin-table" id="recent-orders-table"><thead><tr><th>ID</th><th>User</th><th>Service</th><th>Charge</th><th>Status</th><th>Date</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- Categories -->
+    <section class="admin-tab" id="tab-categories">
+      <div class="panel">
+        <div class="panel-head"><h3>Categories</h3><button class="btn btn-primary btn-sm" id="add-category-btn"><i class="fa-solid fa-plus"></i> Add Category</button></div>
+        <div class="table-wrap"><table class="admin-table" id="categories-table"><thead><tr><th>#</th><th>Name</th><th>Icon</th><th>Order</th><th>Status</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- Services -->
+    <section class="admin-tab" id="tab-services">
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Services</h3>
+          <button class="btn btn-primary btn-sm" id="add-service-btn"><i class="fa-solid fa-plus"></i> Add Service</button>
+        </div>
+        <div class="table-wrap"><table class="admin-table" id="services-table"><thead><tr><th>#</th><th>Category</th><th>Name</th><th>Rate/1000</th><th>Min</th><th>Max</th><th>Status</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- Orders -->
+    <section class="admin-tab" id="tab-orders">
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Orders</h3>
+          <select class="field search-input" id="order-status-filter">
+            <option value="">All statuses</option>
+            <option value="Pending">Pending</option>
+            <option value="Processing">Processing</option>
+            <option value="Completed">Completed</option>
+            <option value="Partial">Partial</option>
+            <option value="Cancelled">Cancelled</option>
+          </select>
+        </div>
+        <div class="table-wrap"><table class="admin-table" id="orders-table"><thead><tr><th>ID</th><th>User</th><th>Service</th><th>Link</th><th>Qty</th><th>Charge</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- Users -->
+    <section class="admin-tab" id="tab-users">
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Users</h3>
+          <input class="field search-input" id="user-search" placeholder="Search name / username / ID">
+        </div>
+        <div class="table-wrap"><table class="admin-table" id="users-table"><thead><tr><th>ID</th><th>Name</th><th>Username</th><th>Telegram ID</th><th>Balance</th><th>Status</th><th>Joined</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- Settings -->
+    <section class="admin-tab" id="tab-settings">
+      <div class="panel">
+        <h3 style="margin-top:0;">General</h3>
+        <div class="form-grid">
+          <div><label>Site Name</label><input class="field" id="set-site_name"></div>
+          <div><label>Currency Symbol</label><input class="field" id="set-currency_symbol"></div>
+          <div><label>Bot Username (no @)</label><input class="field" id="set-bot_username"></div>
+          <div><label>Bot Token</label><input class="field" id="set-bot_token" type="password"></div>
+          <div><label>Update Channel Link</label><input class="field" id="set-channel_link"></div>
+          <div><label>Support Contact Link</label><input class="field" id="set-support_link"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3 style="margin-top:0;">Ads &amp; Rewards</h3>
+        <div class="form-grid">
+          <div><label>Monetag Zone ID</label><input class="field" id="set-monetag_zone_id"></div>
+          <div><label>Reward per Ad</label><input class="field" id="set-ad_reward" type="number" step="0.01"></div>
+          <div><label>Daily Ad Limit</label><input class="field" id="set-daily_ad_limit" type="number"></div>
+          <div><label>Cooldown (minutes)</label><input class="field" id="set-cooldown_minutes" type="number"></div>
+          <div><label>Referral Reward</label><input class="field" id="set-referral_reward" type="number" step="0.01"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3 style="margin-top:0;">Security</h3>
+        <div class="form-grid">
+          <div class="full"><label>Admin Password</label><input class="field" id="set-admin_password" type="text"></div>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="save-settings-btn"><i class="fa-solid fa-floppy-disk"></i> Save Settings</button>
+    </section>
+  </main>
+</div>
+
+<!-- ===== Modals ===== -->
+<div id="categoryModal" class="modal center">
+  <div class="modal-content modal-form">
+    <div class="modal-head"><h3 class="card-title" id="category-modal-title" style="margin:0;">Add Category</h3><span class="close-button" onclick="closeModal('categoryModal')">&times;</span></div>
+    <input type="hidden" id="category-id">
+    <label>Name</label><input class="field" id="category-name" placeholder="e.g. Telegram">
+    <label>Icon (Font Awesome class)</label><input class="field" id="category-icon" placeholder="fa-brands fa-telegram">
+    <label>Sort Order</label><input class="field" id="category-sort" type="number" value="0">
+    <label>Status</label>
+    <select class="field" id="category-status"><option value="active">Active</option><option value="inactive">Inactive</option></select>
+    <button class="btn btn-primary btn-block" id="save-category-btn" style="margin-top:8px;">Save Category</button>
+  </div>
+</div>
+
+<div id="serviceModal" class="modal center">
+  <div class="modal-content modal-form">
+    <div class="modal-head"><h3 class="card-title" id="service-modal-title" style="margin:0;">Add Service</h3><span class="close-button" onclick="closeModal('serviceModal')">&times;</span></div>
+    <input type="hidden" id="service-id">
+    <label>Category</label><select class="field" id="service-category"></select>
+    <label>Name</label><input class="field" id="service-name" placeholder="e.g. Telegram Channel Members">
+    <label>Rate per 1000</label><input class="field" id="service-rate" type="number" step="0.01">
+    <div class="form-grid">
+      <div><label>Min Quantity</label><input class="field" id="service-min" type="number" value="100"></div>
+      <div><label>Max Quantity</label><input class="field" id="service-max" type="number" value="10000"></div>
+    </div>
+    <label>Description (optional)</label><input class="field" id="service-desc">
+    <label>Provider Service ID (optional)</label><input class="field" id="service-provider">
+    <label>Status</label>
+    <select class="field" id="service-status"><option value="active">Active</option><option value="inactive">Inactive</option></select>
+    <button class="btn btn-primary btn-block" id="save-service-btn" style="margin-top:8px;">Save Service</button>
+  </div>
+</div>
+
+<div id="balanceModal" class="modal center">
+  <div class="modal-content modal-form">
+    <div class="modal-head"><h3 class="card-title" style="margin:0;">Adjust Balance</h3><span class="close-button" onclick="closeModal('balanceModal')">&times;</span></div>
+    <input type="hidden" id="balance-user-id">
+    <p class="card-sub" id="balance-user-label"></p>
+    <label>Amount (use negative to deduct)</label><input class="field" id="balance-amount" type="number" step="0.01" placeholder="e.g. 50 or -20">
+    <label>Note</label><input class="field" id="balance-note" placeholder="Reason for adjustment">
+    <button class="btn btn-primary btn-block" id="save-balance-btn" style="margin-top:8px;">Apply</button>
+  </div>
+</div>
+
+<script src="../assets/js/admin.js"></script>
+</body>
+</html>
