@@ -254,14 +254,15 @@ async function loadOrders(){
       <td><a href="${escapeHTML(o.link)}" target="_blank" style="color:var(--primary);">Open link</a></td>
       <td>${o.quantity.toLocaleString()}</td>
       <td>৳${money(o.charge)}</td>
+      <td><span class="badge ${o.source === 'api' ? 'active' : 'inactive'}">${o.source === 'api' ? 'API' : 'App'}</span></td>
+      <td>${o.provider_order_id ? escapeHTML(o.provider_order_id) : (o.provider_error ? `<span title="${escapeHTML(o.provider_error)}" style="color:var(--danger);">failed</span>` : '—')}</td>
       <td>
         <select class="field" style="padding:6px 10px;font-size:12.5px;" onchange="updateOrderStatus(${o.id}, this.value)">
           ${['Pending','Processing','Completed','Partial','Cancelled'].map(s => `<option value="${s}" ${s === o.status ? 'selected' : ''}>${s}</option>`).join('')}
         </select>
       </td>
       <td>${new Date(o.created_at).toLocaleDateString()}</td>
-      <td></td>
-    </tr>`).join('') || `<tr><td colspan="9" style="text-align:center;color:var(--text-dim);">No orders found</td></tr>`;
+    </tr>`).join('') || `<tr><td colspan="10" style="text-align:center;color:var(--text-dim);">No orders found</td></tr>`;
 }
 async function updateOrderStatus(id, status){
   try{ await api(`/api/admin/orders/${id}`, { method: 'PUT', body: JSON.stringify({ status }) }); }
@@ -323,7 +324,8 @@ async function loadSettings(){
 }
 async function saveSettings(){
   const keys = ['site_name','currency_symbol','bot_username','bot_token','channel_link','support_link',
-                'monetag_zone_id','ad_reward','daily_ad_limit','cooldown_minutes','referral_reward','admin_password'];
+                'ads_earning_enabled','monetag_zone_id','ad_reward','daily_ad_limit','cooldown_minutes',
+                'provider_auto_order','provider_api_url','provider_api_key','admin_password'];
   const payload = {};
   keys.forEach(k => { const f = el('set-' + k); if (f) payload[k] = f.value; });
   try{
