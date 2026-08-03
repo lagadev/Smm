@@ -207,3 +207,35 @@ select.field{ appearance:none; -webkit-appearance:none; background-image:url("da
 .flex-between{ display:flex; align-items:center; justify-content:space-between; }
 .notice-box{ background:var(--warning-bg); border:1px solid #FDE68A; color:var(--warning); border-radius:12px; padding:14px 16px; font-size:13px; margin-bottom:14px; display:flex; gap:10px; align-items:flex-start; }
 .notice-box i{ margin-top:2px; }
+
+/* ---------- 3-column layout variants ---------- */
+.stats-grid-3{ grid-template-columns:repeat(3,1fr); }
+.nav-bar-3{ grid-template-columns:repeat(3,1fr); }
+
+/* ---------- Service info box (New Order) ---------- */
+.service-info-box{ background:var(--surface-2); border:1px solid var(--border); border-radius:11px; padding:12px 14px; margin-top:10px; }
+.sib-row{ display:flex; justify-content:space-between; font-size:12.5px; padding:4px 0; color:var(--text-dim); }
+.sib-row strong{ color:var(--text); font-family:var(--font-display); font-weight:700; }
+.sib-desc{ font-size:12px; color:var(--text-faint); margin-top:6px; padding-top:8px; border-top:1px dashed var(--border); line-height:1.5; }
+
+/* ---------- Profile ---------- */
+#profile-pic-lg{ width:52px; height:52px; border-radius:50%; background:var(--surface-2); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-weight:700; overflow:hidden; color:var(--primary); font-size:20px; flex:0 0 auto; }
+#profile-pic-lg img{ width:100%; height:100%; object-fit:cover; }
+
+.fab-card{ display:flex; align-items:center; gap:14px; width:100%; text-align:left; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:16px 18px; margin-bottom:16px; cursor:pointer; transition:border-color .15s ease; }
+.fab-card:hover{ border-color:var(--primary); }
+.fab-icon{ width:42px; height:42px; border-radius:12px; background:var(--primary-tint); color:var(--primary); display:flex; align-items:center; justify-content:center; font-size:17px; flex:0 0 auto; }
+.fab-title{ font-weight:700; font-size:14.5px; }
+.fab-sub{ font-size:12px; color:var(--text-dim); margin-top:2px; }
+
+/* ---------- Force-join gate ---------- */
+.fj-gate{ position:fixed; inset:0; z-index:8000; background:var(--bg); display:flex; align-items:center; justify-content:center; padding:20px; }
+.fj-card{ width:100%; max-width:420px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:26px 22px; animation:fadeUp .35s ease-out; }
+.fj-channel{ display:flex; align-items:center; gap:12px; background:var(--surface-2); border:1px solid var(--border); border-radius:12px; padding:12px 14px; margin-bottom:10px; }
+.fj-channel .fj-icon{ width:36px; height:36px; border-radius:10px; background:var(--primary-tint); color:var(--primary); display:flex; align-items:center; justify-content:center; font-size:16px; flex:0 0 auto; }
+.fj-channel .fj-title{ font-weight:700; font-size:13.5px; flex:1; min-width:0; }
+.fj-channel .fj-title small{ display:block; font-weight:500; color:var(--text-dim); font-size:11.5px; margin-top:1px; }
+.fj-channel.joined{ border-color:var(--success); }
+.fj-channel.missing{ border-color:var(--danger); }
+.fj-hint{ font-size:12px; color:var(--danger); text-align:center; margin-top:12px; min-height:16px; }
+
