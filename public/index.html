@@ -29,6 +29,21 @@
 
 <div id="ad-loader-overlay"><div class="loader"></div><span id="ad-loader-text">Loading ad…</span></div>
 
+<!-- ===== Force Join gate ===== -->
+<div id="force-join-gate" class="fj-gate hidden">
+  <div class="fj-card">
+    <div class="brand-mark" style="margin:0 auto 14px;">TG</div>
+    <h2 style="text-align:center;margin:0 0 4px;">Join to Continue</h2>
+    <p class="card-sub" style="text-align:center;">Join the channel(s) below, then tap Verify.</p>
+    <div id="fj-channel-list"></div>
+    <button class="btn btn-primary btn-block" id="fj-verify-button" style="margin-top:6px;">
+      <span class="button-text"><i class="fa-solid fa-check-double"></i> Verify</span>
+      <div class="spinner hidden"></div>
+    </button>
+    <p class="fj-hint" id="fj-hint"></p>
+  </div>
+</div>
+
 <div class="container">
 
   <!-- ===== Top bar ===== -->
@@ -40,7 +55,7 @@
     <div id="profile-pic"><i class="fa-solid fa-user"></i></div>
   </div>
 
-  <!-- ===== HOME VIEW — balance + API token only ===== -->
+  <!-- ===== HOME VIEW — wallet, stats, new order ===== -->
   <section id="view-home" class="view">
     <div class="balance-card">
       <div class="balance-top">
@@ -51,28 +66,18 @@
         <i class="fa-solid fa-wallet" style="font-size:20px;color:rgba(255,255,255,.85);"></i>
       </div>
       <div class="balance-actions">
-        <button class="btn btn-primary" onclick="switchView('order')"><i class="fa-solid fa-bolt"></i> New Order</button>
+        <button class="btn btn-primary" onclick="document.getElementById('order-card').scrollIntoView({behavior:'smooth'})"><i class="fa-solid fa-bolt"></i> New Order</button>
         <button class="btn btn-outline" onclick="switchView('funds')"><i class="fa-solid fa-plus"></i> Add Funds</button>
       </div>
     </div>
 
-    <div class="token-card">
-      <h3 class="card-title">API Access</h3>
-      <p class="card-sub">Place orders programmatically using your personal key.</p>
-      <div class="token-row">
-        <code id="api-token-display">••••••••••••••••••••••••</code>
-        <div class="token-actions">
-          <button class="btn btn-sm btn-ghost" id="copy-token-btn" title="Copy"><i class="fa-solid fa-copy"></i></button>
-          <button class="btn btn-sm btn-ghost" id="regen-token-btn" title="Regenerate"><i class="fa-solid fa-rotate"></i></button>
-        </div>
-      </div>
-      <p class="token-hint">Base URL: <code id="api-base-url">/api/v2</code> · Actions: <code>services</code>, <code>add</code>, <code>status</code>, <code>balance</code></p>
+    <div class="stats-grid stats-grid-3">
+      <div class="stat-item"><div class="icon"><i class="fa-solid fa-bag-shopping"></i></div><div class="value" id="stat-orders">0</div><div class="label">Total Order</div></div>
+      <div class="stat-item"><div class="icon"><i class="fa-solid fa-arrow-up"></i></div><div class="value" id="stat-spent">0</div><div class="label">Total Spend</div></div>
+      <div class="stat-item"><div class="icon"><i class="fa-solid fa-arrow-down"></i></div><div class="value" id="stat-earned">0</div><div class="label">Total Earn</div></div>
     </div>
-  </section>
 
-  <!-- ===== NEW ORDER VIEW ===== -->
-  <section id="view-order" class="view hidden">
-    <div class="card">
+    <div class="card" id="order-card">
       <h3 class="card-title">New Order</h3>
       <p class="card-sub">Pick a category, choose a service, and confirm.</p>
 
@@ -84,7 +89,12 @@
           <div class="step-body">
             <div class="step-label">Service</div>
             <select class="field" id="service-select"><option value="">Select a service</option></select>
-            <div class="service-meta" id="service-meta"></div>
+            <div class="service-info-box hidden" id="service-info-box">
+              <div class="sib-row"><span>Service ID</span><strong id="sib-id">—</strong></div>
+              <div class="sib-row"><span>Rate / 1000</span><strong id="sib-rate">—</strong></div>
+              <div class="sib-row"><span>Min / Max</span><strong id="sib-minmax">—</strong></div>
+              <div class="sib-desc" id="sib-desc"></div>
+            </div>
           </div>
         </div>
 
@@ -111,7 +121,6 @@
             <div class="order-summary">
               <div class="order-summary-row"><span>Category</span><strong id="sum-category">—</strong></div>
               <div class="order-summary-row"><span>Service</span><strong id="sum-service">—</strong></div>
-              <div class="order-summary-row"><span>Rate / 1000</span><strong id="sum-rate">—</strong></div>
               <div class="order-summary-row"><span>Quantity</span><strong id="sum-qty">—</strong></div>
               <div class="order-summary-row total"><span>Total Charge</span><strong id="sum-charge">৳0.00</strong></div>
             </div>
@@ -148,8 +157,37 @@
     </div>
   </section>
 
-  <!-- ===== HISTORY VIEW ===== -->
-  <section id="view-history" class="view hidden">
+  <!-- ===== PROFILE VIEW — API access, docs, history ===== -->
+  <section id="view-profile" class="view hidden">
+    <div class="card" style="display:flex;align-items:center;gap:14px;">
+      <div id="profile-pic-lg"><i class="fa-solid fa-user"></i></div>
+      <div style="min-width:0;">
+        <div id="profile-name" style="font-family:var(--font-display);font-weight:800;font-size:16px;">User</div>
+        <div id="profile-id" class="text-dim" style="font-size:12.5px;">ID: —</div>
+      </div>
+    </div>
+
+    <div class="token-card">
+      <h3 class="card-title">API Access</h3>
+      <p class="card-sub">Place orders programmatically using your personal key.</p>
+      <div class="token-row">
+        <code id="api-token-display">••••••••••••••••••••••••</code>
+        <div class="token-actions">
+          <button class="btn btn-sm btn-ghost" id="copy-token-btn" title="Copy"><i class="fa-solid fa-copy"></i></button>
+          <button class="btn btn-sm btn-ghost" id="regen-token-btn" title="Regenerate"><i class="fa-solid fa-rotate"></i></button>
+        </div>
+      </div>
+    </div>
+
+    <button class="fab-card" id="api-docs-button">
+      <div class="fab-icon"><i class="fa-solid fa-book"></i></div>
+      <div class="fab-text">
+        <div class="fab-title">API Documentation</div>
+        <div class="fab-sub">Full guide to placing orders via API</div>
+      </div>
+      <i class="fa-solid fa-chevron-right text-dim"></i>
+    </button>
+
     <div class="card">
       <div class="pill-row">
         <button class="pill active" data-tab="orders" onclick="switchHistoryTab('orders')"><i class="fa-solid fa-bag-shopping"></i> Orders</button>
@@ -162,12 +200,11 @@
 
 </div>
 
-<!-- ===== Nav bar (4 tabs — Support merged into Funds) ===== -->
-<div class="nav-bar">
+<!-- ===== Nav bar (3 tabs) ===== -->
+<div class="nav-bar nav-bar-3">
   <button class="nav-button active" data-view="home" onclick="switchView('home')"><i class="fa-solid fa-house"></i><span>Home</span></button>
-  <button class="nav-button" data-view="order" onclick="switchView('order')"><i class="fa-solid fa-bolt"></i><span>Order</span></button>
   <button class="nav-button" data-view="funds" onclick="switchView('funds')"><i class="fa-solid fa-wallet"></i><span>Funds</span></button>
-  <button class="nav-button" data-view="history" onclick="switchView('history')"><i class="fa-solid fa-clock-rotate-left"></i><span>History</span></button>
+  <button class="nav-button" data-view="profile" onclick="switchView('profile')"><i class="fa-solid fa-user"></i><span>Profile</span></button>
 </div>
 
 <!-- ===== Modals ===== -->
