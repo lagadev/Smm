@@ -59,7 +59,8 @@ const TAB_TITLES = {
   services: ['Services', 'Manage the services users can order'],
   orders: ['Orders', 'Review and update customer orders'],
   users: ['Users', 'Manage user balances and access'],
-  settings: ['Settings', 'Configure bot, ads and rewards'],
+  forcejoin: ['Force Join', 'Channels users must join before using the app'],
+  settings: ['Settings', 'Configure bot, ads, provider and rewards'],
 };
 
 function switchTab(tab){
@@ -73,6 +74,7 @@ function switchTab(tab){
   if (tab === 'services') loadServices();
   if (tab === 'orders') loadOrders();
   if (tab === 'users') loadUsers();
+  if (tab === 'forcejoin') loadForceJoin();
   if (tab === 'settings') loadSettings();
 }
 
@@ -245,10 +247,11 @@ async function deleteService(id){
 async function loadOrders(){
   const status = el('order-status-filter').value;
   const { orders } = await api('/api/admin/orders' + (status ? `?status=${status}` : ''));
+  cache.orders = orders;
   const tbody = document.querySelector('#orders-table tbody');
   tbody.innerHTML = orders.map(o => `
     <tr>
-      <td>#${o.id}</td>
+      <td>#${60000000 + o.id}</td>
       <td>${escapeHTML(o.first_name)}<br><span style="color:var(--text-faint);font-size:11.5px;">${escapeHTML(o.telegram_id)}</span></td>
       <td>${escapeHTML(o.service_name)}</td>
       <td><a href="${escapeHTML(o.link)}" target="_blank" style="color:var(--primary);">Open link</a></td>
@@ -256,17 +259,22 @@ async function loadOrders(){
       <td>৳${money(o.charge)}</td>
       <td><span class="badge ${o.source === 'api' ? 'active' : 'inactive'}">${o.source === 'api' ? 'API' : 'App'}</span></td>
       <td>${o.provider_order_id ? escapeHTML(o.provider_order_id) : (o.provider_error ? `<span title="${escapeHTML(o.provider_error)}" style="color:var(--danger);">failed</span>` : '—')}</td>
-      <td>
-        <select class="field" style="padding:6px 10px;font-size:12.5px;" onchange="updateOrderStatus(${o.id}, this.value)">
-          ${['Pending','Processing','Completed','Partial','Cancelled'].map(s => `<option value="${s}" ${s === o.status ? 'selected' : ''}>${s}</option>`).join('')}
-        </select>
-      </td>
+      <td><span class="badge ${o.status === 'Completed' ? 'active' : (o.status === 'Cancelled' ? '' : 'inactive')}" style="${o.status === 'Cancelled' ? 'color:var(--danger);background:var(--danger-bg);' : ''}">${escapeHTML(o.status)}</span></td>
       <td>${new Date(o.created_at).toLocaleDateString()}</td>
-    </tr>`).join('') || `<tr><td colspan="10" style="text-align:center;color:var(--text-dim);">No orders found</td></tr>`;
+      <td class="actions">
+        ${o.provider_order_id ? `<button class="btn btn-sm btn-ghost" onclick="syncOrder(${o.id})" title="Pull latest status from provider"><i class="fa-solid fa-rotate"></i></button>` : ''}
+        ${o.status !== 'Cancelled' && o.status !== 'Completed' ? `<button class="btn btn-sm btn-ghost" onclick="cancelOrder(${o.id})" style="color:var(--danger);" title="Cancel &amp; refund"><i class="fa-solid fa-ban"></i></button>` : ''}
+      </td>
+    </tr>`).join('') || `<tr><td colspan="11" style="text-align:center;color:var(--text-dim);">No orders found</td></tr>`;
 }
-async function updateOrderStatus(id, status){
-  try{ await api(`/api/admin/orders/${id}`, { method: 'PUT', body: JSON.stringify({ status }) }); }
-  catch(e){ alert(e.message); loadOrders(); }
+async function syncOrder(id){
+  try{ const res = await api(`/api/admin/orders/${id}/sync`, { method: 'POST' }); loadOrders(); }
+  catch(e){ alert(e.message); }
+}
+async function cancelOrder(id){
+  if (!confirm('Cancel this order and refund the user?')) return;
+  try{ await api(`/api/admin/orders/${id}`, { method: 'PUT', body: JSON.stringify({ status: 'Cancelled' }) }); loadOrders(); }
+  catch(e){ alert(e.message); }
 }
 
 // ---------------- Users ----------------
@@ -285,12 +293,113 @@ async function loadUsers(){
       <td><span class="badge ${u.banned ? 'inactive' : 'active'}">${u.banned ? 'Banned' : 'Active'}</span></td>
       <td>${new Date(u.created_at).toLocaleDateString()}</td>
       <td class="actions">
-        <button class="btn btn-sm btn-ghost" onclick="openBalanceModal(${u.id})"><i class="fa-solid fa-coins"></i></button>
-        <button class="btn btn-sm btn-ghost" onclick="toggleBan(${u.id}, ${u.banned ? 0 : 1})" style="color:${u.banned ? 'var(--primary)' : 'var(--danger)'};">
+        <button class="btn btn-sm btn-ghost" onclick="openUserDetail(${u.id})" title="View details"><i class="fa-solid fa-eye"></i></button>
+        <button class="btn btn-sm btn-ghost" onclick="openBalanceModal(${u.id})" title="Adjust balance"><i class="fa-solid fa-coins"></i></button>
+        <button class="btn btn-sm btn-ghost" onclick="toggleBan(${u.id}, ${u.banned ? 0 : 1})" style="color:${u.banned ? 'var(--primary)' : 'var(--danger)'};" title="${u.banned ? 'Unban' : 'Ban'}">
           <i class="fa-solid ${u.banned ? 'fa-lock-open' : 'fa-ban'}"></i>
         </button>
       </td>
     </tr>`).join('') || `<tr><td colspan="8" style="text-align:center;color:var(--text-dim);">No users found</td></tr>`;
+}
+
+async function openUserDetail(userId){
+  const body = el('user-detail-body');
+  body.innerHTML = '<p class="card-sub">Loading…</p>';
+  showModal('userDetailModal');
+  try{
+    const { user, stats, recentOrders, recentTxns } = await api(`/api/admin/users/${userId}/detail`);
+    body.innerHTML = `
+      <div class="stat-cards" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px;">
+        <div class="stat-card"><div class="label">Orders</div><div class="value">${stats.total_orders}</div></div>
+        <div class="stat-card"><div class="label">Spent</div><div class="value">৳${money(stats.total_spent)}</div></div>
+        <div class="stat-card"><div class="label">Earned</div><div class="value">৳${money(stats.total_earned)}</div></div>
+      </div>
+      <div class="form-grid" style="margin-bottom:16px;">
+        <div><label>Name</label><div>${escapeHTML(user.first_name)}</div></div>
+        <div><label>Username</label><div>${user.username ? '@' + escapeHTML(user.username) : '—'}</div></div>
+        <div><label>Telegram ID</label><div>${escapeHTML(user.telegram_id)}</div></div>
+        <div><label>Balance</label><div>৳${money(user.balance)}</div></div>
+        <div><label>Status</label><div>${user.banned ? 'Banned' : 'Active'}</div></div>
+        <div><label>Joined</label><div>${new Date(user.created_at).toLocaleString()}</div></div>
+        <div class="full"><label>API Token</label><div style="font-family:monospace;font-size:12px;word-break:break-all;">${escapeHTML(user.api_token || '—')}</div></div>
+      </div>
+      <h3 class="card-title">Recent Orders</h3>
+      <div class="table-wrap"><table class="admin-table"><thead><tr><th>ID</th><th>Service</th><th>Charge</th><th>Status</th><th>Date</th></tr></thead><tbody>
+        ${recentOrders.map(o => `<tr><td>#${60000000 + o.id}</td><td>${escapeHTML(o.service_name)}</td><td>৳${money(o.charge)}</td><td>${escapeHTML(o.status)}</td><td>${new Date(o.created_at).toLocaleDateString()}</td></tr>`).join('') || `<tr><td colspan="5" style="text-align:center;color:var(--text-dim);">None</td></tr>`}
+      </tbody></table></div>
+      <h3 class="card-title" style="margin-top:16px;">Recent Transactions</h3>
+      <div class="table-wrap"><table class="admin-table"><thead><tr><th>Type</th><th>Amount</th><th>Note</th><th>Date</th></tr></thead><tbody>
+        ${recentTxns.map(t => `<tr><td>${escapeHTML(t.type)}</td><td>${t.amount >= 0 ? '+' : ''}৳${money(t.amount)}</td><td>${escapeHTML(t.note || '')}</td><td>${new Date(t.created_at).toLocaleDateString()}</td></tr>`).join('') || `<tr><td colspan="4" style="text-align:center;color:var(--text-dim);">None</td></tr>`}
+      </tbody></table></div>`;
+  }catch(e){
+    body.innerHTML = `<p class="card-sub" style="color:var(--danger);">${escapeHTML(e.message)}</p>`;
+  }
+}
+
+// ---------------- Force Join ----------------
+async function loadForceJoin(){
+  const { channels } = await api('/api/admin/force-join');
+  cache.forcejoin = channels;
+  const tbody = document.querySelector('#fj-table tbody');
+  tbody.innerHTML = channels.map(c => `
+    <tr>
+      <td>${c.id}</td>
+      <td><i class="${escapeHTML(c.icon || '')}"></i> ${escapeHTML(c.title)}</td>
+      <td>@${escapeHTML(c.username)}</td>
+      <td>${c.sort_order}</td>
+      <td><span class="badge ${c.status === 'active' ? 'active' : 'inactive'}">${c.status}</span></td>
+      <td class="actions">
+        <button class="btn btn-sm btn-ghost" onclick="editForceJoin(${c.id})"><i class="fa-solid fa-pen"></i></button>
+        <button class="btn btn-sm btn-ghost" onclick="deleteForceJoin(${c.id})" style="color:var(--danger);"><i class="fa-solid fa-trash"></i></button>
+      </td>
+    </tr>`).join('') || `<tr><td colspan="6" style="text-align:center;color:var(--text-dim);">No force-join channels yet</td></tr>`;
+}
+function openAddForceJoin(){
+  el('fj-modal-title').textContent = 'Add Channel';
+  el('fj-id').value = '';
+  el('fj-title').value = 'Join Channel';
+  el('fj-username').value = '';
+  el('fj-invite').value = '';
+  el('fj-icon').value = 'fa-brands fa-telegram';
+  el('fj-sort').value = 0;
+  el('fj-status').value = 'active';
+  showModal('fjModal');
+}
+function editForceJoin(id){
+  const c = cache.forcejoin.find(x => x.id === id);
+  if (!c) return;
+  el('fj-modal-title').textContent = 'Edit Channel';
+  el('fj-id').value = c.id;
+  el('fj-title').value = c.title;
+  el('fj-username').value = c.username;
+  el('fj-invite').value = c.invite_link || '';
+  el('fj-icon').value = c.icon || '';
+  el('fj-sort').value = c.sort_order;
+  el('fj-status').value = c.status;
+  showModal('fjModal');
+}
+async function saveForceJoin(){
+  const id = el('fj-id').value;
+  const payload = {
+    title: el('fj-title').value.trim(),
+    username: el('fj-username').value.trim().replace(/^@/, ''),
+    invite_link: el('fj-invite').value.trim() || null,
+    icon: el('fj-icon').value.trim() || 'fa-brands fa-telegram',
+    sort_order: parseInt(el('fj-sort').value, 10) || 0,
+    status: el('fj-status').value,
+  };
+  if (!payload.title || !payload.username) return alert('Title and username are required');
+  try{
+    if (id) await api(`/api/admin/force-join/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+    else await api('/api/admin/force-join', { method: 'POST', body: JSON.stringify(payload) });
+    closeModal('fjModal');
+    loadForceJoin();
+  }catch(e){ alert(e.message); }
+}
+async function deleteForceJoin(id){
+  if (!confirm('Delete this force-join channel?')) return;
+  try{ await api(`/api/admin/force-join/${id}`, { method: 'DELETE' }); loadForceJoin(); }
+  catch(e){ alert(e.message); }
 }
 function openBalanceModal(userId){
   const u = cache.users.find(x => x.id === userId);
@@ -325,7 +434,7 @@ async function loadSettings(){
 async function saveSettings(){
   const keys = ['site_name','currency_symbol','bot_username','bot_token','channel_link','support_link',
                 'ads_earning_enabled','monetag_zone_id','ad_reward','daily_ad_limit','cooldown_minutes',
-                'provider_auto_order','provider_api_url','provider_api_key','admin_password'];
+                'provider_auto_order','provider_api_url','provider_api_key','force_join_enabled','admin_password'];
   const payload = {};
   keys.forEach(k => { const f = el('set-' + k); if (f) payload[k] = f.value; });
   try{
@@ -354,6 +463,8 @@ document.addEventListener('DOMContentLoaded', () => {
   el('save-category-btn').addEventListener('click', saveCategory);
   el('add-service-btn').addEventListener('click', openAddService);
   el('save-service-btn').addEventListener('click', saveService);
+  el('add-fj-btn').addEventListener('click', openAddForceJoin);
+  el('save-fj-btn').addEventListener('click', saveForceJoin);
   el('order-status-filter').addEventListener('change', loadOrders);
   el('user-search').addEventListener('input', debounce(loadUsers, 350));
   el('save-balance-btn').addEventListener('click', saveBalanceAdjust);
