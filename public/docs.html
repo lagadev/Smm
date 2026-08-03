@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TeleGrow API Docs</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="assets/css/style.css">
+<style>
+  body{ padding:18px 16px 60px; max-width:640px; margin:0 auto; }
+  .docs-header{ display:flex; align-items:center; gap:10px; margin-bottom:22px; }
+  .docs-header button{ border:none; background:var(--surface-2); width:36px; height:36px; border-radius:10px; color:var(--text); font-size:15px; cursor:pointer; }
+  .docs-header h1{ font-size:19px; margin:0; }
+  h2.section-title{ font-size:16px; margin:26px 0 12px; display:flex; align-items:center; gap:8px; }
+  h2.section-title i{ color:var(--primary); }
+  .doc-table{ width:100%; border-collapse:collapse; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; margin-bottom:14px; }
+  .doc-table th{ text-align:left; background:var(--surface-2); padding:11px 14px; font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-dim); font-weight:700; }
+  .doc-table td{ padding:12px 14px; border-top:1px solid var(--border); font-size:13.5px; }
+  .doc-table td:first-child{ font-family:monospace; color:var(--primary-dim); font-weight:600; white-space:nowrap; }
+  .code-block{ background:#0F1115; color:#D7DBE0; border-radius:var(--radius); padding:16px; font-family:'SFMono-Regular',Consolas,monospace; font-size:12.5px; line-height:1.7; overflow-x:auto; white-space:pre; margin-bottom:14px; }
+  .code-block .k{ color:#7DD3FC; }
+  .code-block .s{ color:#86EFAC; }
+  .note{ font-size:12.5px; color:var(--text-dim); margin:-6px 0 14px; line-height:1.6; }
+</style>
+</head>
+<body>
+
+  <div class="docs-header">
+    <button onclick="history.length > 1 ? history.back() : window.close()"><i class="fa-solid fa-arrow-left"></i></button>
+    <h1>TeleGrow API Documentation</h1>
+  </div>
+
+  <h2 class="section-title"><i class="fa-solid fa-plug"></i> API</h2>
+  <table class="doc-table">
+    <tr><th>HTTP Method</th><td>POST</td></tr>
+    <tr><th>API URL</th><td id="api-url">https://your-domain/api/v2</td></tr>
+    <tr><th>API Key</th><td>Copy it from the <strong>Profile</strong> tab in the Mini App</td></tr>
+    <tr><th>Return format</th><td>JSON</td></tr>
+  </table>
+
+  <h2 class="section-title"><i class="fa-solid fa-list"></i> Service List</h2>
+  <table class="doc-table">
+    <tr><th>Parameter</th><th>Explanation</th></tr>
+    <tr><td>key</td><td>Your API Key</td></tr>
+    <tr><td>action</td><td>services</td></tr>
+  </table>
+  <p class="note">Sample return</p>
+  <div class="code-block">[
+  {
+    <span class="k">"service"</span>: 1,
+    <span class="k">"name"</span>: <span class="s">"Telegram Channel Members"</span>,
+    <span class="k">"category"</span>: <span class="s">"Telegram"</span>,
+    <span class="k">"rate"</span>: 45,
+    <span class="k">"min"</span>: 100,
+    <span class="k">"max"</span>: 50000
+  },
+  {
+    <span class="k">"service"</span>: 3,
+    <span class="k">"name"</span>: <span class="s">"YouTube Subscribers"</span>,
+    <span class="k">"category"</span>: <span class="s">"YouTube"</span>,
+    <span class="k">"rate"</span>: 250,
+    <span class="k">"min"</span>: 50,
+    <span class="k">"max"</span>: 20000
+  }
+]</div>
+
+  <h2 class="section-title"><i class="fa-solid fa-bolt"></i> New Order</h2>
+  <table class="doc-table">
+    <tr><th>Parameter</th><th>Explanation</th></tr>
+    <tr><td>key</td><td>Your API Key</td></tr>
+    <tr><td>action</td><td>add</td></tr>
+    <tr><td>service</td><td>Service ID</td></tr>
+    <tr><td>link</td><td>Service link</td></tr>
+    <tr><td>quantity</td><td>Quantity</td></tr>
+  </table>
+  <p class="note">Sample return</p>
+  <div class="code-block">{
+  <span class="k">"order"</span>: 23501
+}</div>
+
+  <h2 class="section-title"><i class="fa-solid fa-magnifying-glass"></i> Order Status</h2>
+  <table class="doc-table">
+    <tr><th>Parameter</th><th>Explanation</th></tr>
+    <tr><td>key</td><td>Your API Key</td></tr>
+    <tr><td>action</td><td>status</td></tr>
+    <tr><td>order</td><td>Order ID</td></tr>
+  </table>
+  <p class="note">Sample return</p>
+  <div class="code-block">{
+  <span class="k">"charge"</span>: <span class="s">"0.2782"</span>,
+  <span class="k">"start_count"</span>: <span class="s">"3572"</span>,
+  <span class="k">"status"</span>: <span class="s">"Processing"</span>,
+  <span class="k">"remains"</span>: <span class="s">"157"</span>,
+  <span class="k">"currency"</span>: <span class="s">"BDT"</span>
+}</div>
+
+  <h2 class="section-title"><i class="fa-solid fa-wallet"></i> Balance</h2>
+  <table class="doc-table">
+    <tr><th>Parameter</th><th>Explanation</th></tr>
+    <tr><td>key</td><td>Your API Key</td></tr>
+    <tr><td>action</td><td>balance</td></tr>
+  </table>
+  <p class="note">Sample return</p>
+  <div class="code-block">{
+  <span class="k">"balance"</span>: <span class="s">"120.50"</span>,
+  <span class="k">"currency"</span>: <span class="s">"BDT"</span>
+}</div>
+
+  <h2 class="section-title"><i class="fa-solid fa-triangle-exclamation"></i> Errors</h2>
+  <p class="note">All errors are returned as <code>{"error": "message"}</code> with HTTP 200, matching common SMM-panel API conventions so existing reseller scripts work without modification.</p>
+
+<script>
+  document.getElementById('api-url').textContent = window.location.origin + '/api/v2';
+</script>
+</body>
+</html>
