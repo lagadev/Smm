@@ -31,6 +31,7 @@
     <button class="side-link" data-tab="services"><i class="fa-solid fa-list-check"></i> Services</button>
     <button class="side-link" data-tab="orders"><i class="fa-solid fa-bag-shopping"></i> Orders</button>
     <button class="side-link" data-tab="users"><i class="fa-solid fa-users"></i> Users</button>
+    <button class="side-link" data-tab="forcejoin"><i class="fa-solid fa-link"></i> Force Join</button>
     <button class="side-link" data-tab="settings"><i class="fa-solid fa-gear"></i> Settings</button>
     <button class="side-link logout" id="logout-button"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</button>
   </aside>
@@ -92,7 +93,8 @@
             <option value="Cancelled">Cancelled</option>
           </select>
         </div>
-        <div class="table-wrap"><table class="admin-table" id="orders-table"><thead><tr><th>ID</th><th>User</th><th>Service</th><th>Link</th><th>Qty</th><th>Charge</th><th>Source</th><th>Provider #</th><th>Status</th><th>Date</th></tr></thead><tbody></tbody></table></div>
+        <p class="card-sub" style="margin-top:-6px;">Orders auto-place with your provider — use <strong>Sync</strong> to pull the latest status, or <strong>Cancel</strong> to refund the user.</p>
+        <div class="table-wrap"><table class="admin-table" id="orders-table"><thead><tr><th>ID</th><th>User</th><th>Service</th><th>Link</th><th>Qty</th><th>Charge</th><th>Source</th><th>Provider #</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
       </div>
     </section>
 
@@ -104,6 +106,15 @@
           <input class="field search-input" id="user-search" placeholder="Search name / username / ID">
         </div>
         <div class="table-wrap"><table class="admin-table" id="users-table"><thead><tr><th>ID</th><th>Name</th><th>Username</th><th>Telegram ID</th><th>Balance</th><th>Status</th><th>Joined</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- Force Join -->
+    <section class="admin-tab" id="tab-forcejoin">
+      <div class="panel">
+        <div class="panel-head"><h3>Force-Join Channels</h3><button class="btn btn-primary btn-sm" id="add-fj-btn"><i class="fa-solid fa-plus"></i> Add Channel</button></div>
+        <p class="card-sub" style="margin-top:-6px;">Users must join every active channel before the Mini App unlocks. Verification uses the Bot Token from Settings, so your bot must be a member/admin of each channel.</p>
+        <div class="table-wrap"><table class="admin-table" id="fj-table"><thead><tr><th>#</th><th>Title</th><th>Username</th><th>Order</th><th>Status</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
       </div>
     </section>
 
@@ -148,6 +159,18 @@
           <div><label>Provider API URL</label><input class="field" id="set-provider_api_url" placeholder="https://my.smmgen.com/api/v2"></div>
           <div class="full"><label>Provider API Key</label><input class="field" id="set-provider_api_key" type="password"></div>
         </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3 style="margin:0;">Force Join</h3></div>
+        <div class="form-grid">
+          <div><label>Force-Join Gate</label>
+            <select class="field" id="set-force_join_enabled">
+              <option value="1">Enabled — users must join channels first</option>
+              <option value="0">Disabled — skip the join gate</option>
+            </select>
+          </div>
+        </div>
+        <p class="card-sub" style="margin-bottom:0;">Manage the actual channel list from the <strong>Force Join</strong> tab.</p>
       </div>
       <div class="panel">
         <h3 style="margin-top:0;">Security</h3>
@@ -201,6 +224,28 @@
     <label>Amount (use negative to deduct)</label><input class="field" id="balance-amount" type="number" step="0.01" placeholder="e.g. 50 or -20">
     <label>Note</label><input class="field" id="balance-note" placeholder="Reason for adjustment">
     <button class="btn btn-primary btn-block" id="save-balance-btn" style="margin-top:8px;">Apply</button>
+  </div>
+</div>
+
+<div id="fjModal" class="modal center">
+  <div class="modal-content modal-form">
+    <div class="modal-head"><h3 class="card-title" id="fj-modal-title" style="margin:0;">Add Channel</h3><span class="close-button" onclick="closeModal('fjModal')">&times;</span></div>
+    <input type="hidden" id="fj-id">
+    <label>Display Title</label><input class="field" id="fj-title" placeholder="e.g. Join Channel">
+    <label>Channel Username (no @)</label><input class="field" id="fj-username" placeholder="e.g. BasicTouchPro">
+    <label>Custom Invite Link (optional, for private channels)</label><input class="field" id="fj-invite" placeholder="https://t.me/+xxxxxxx">
+    <label>Icon (Font Awesome class)</label><input class="field" id="fj-icon" placeholder="fa-brands fa-telegram">
+    <label>Sort Order</label><input class="field" id="fj-sort" type="number" value="0">
+    <label>Status</label>
+    <select class="field" id="fj-status"><option value="active">Active</option><option value="inactive">Inactive</option></select>
+    <button class="btn btn-primary btn-block" id="save-fj-btn" style="margin-top:8px;">Save Channel</button>
+  </div>
+</div>
+
+<div id="userDetailModal" class="modal center">
+  <div class="modal-content modal-form" style="max-width:520px;">
+    <div class="modal-head"><h3 class="card-title" style="margin:0;">User Details</h3><span class="close-button" onclick="closeModal('userDetailModal')">&times;</span></div>
+    <div id="user-detail-body"></div>
   </div>
 </div>
 
