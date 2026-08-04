@@ -16,13 +16,23 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "telegrow-db",
+      "database_name": "telegrow",
       "database_id": "3f2bc813-08f4-424f-8e7d-c8793ca1a23d"
     }
   ],
 
+  // Cron Triggers:
+  //  - every 5 minutes: sync Processing orders + pending refills from the provider
+  //  - every hour on the hour: check whether it's time for the daily broadcast
+  "triggers": {
+    "crons": ["*/5 * * * *", "0 * * * *"]
+  },
+
   "vars": {
-    "ENV": "production"
+    "ENV": "production",
+    // Set this to your deployed Worker URL (e.g. https://telegrow.yoursubdomain.workers.dev)
+    // so bot messages (start/broadcast) can link back to the Mini App.
+    "APP_URL": "https://REPLACE_WITH_YOUR_WORKER_URL"
   }
 }
 
