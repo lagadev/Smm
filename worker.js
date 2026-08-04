@@ -1,6 +1,6 @@
 /**
- * TeleGrow — SMM Panel Mini App backend (v3)
- * Cloudflare Worker + D1
+ * TeleGrow — SMM Panel Mini App backend (v4)
+ * Cloudflare Worker + D1 + Cron Triggers
  *
  * Mini App routes:
  *   GET  /api/settings/public
@@ -8,17 +8,22 @@
  *   GET  /api/user?telegram_id=
  *   GET  /api/user/stats?telegram_id=
  *   POST /api/user/regenerate-token       { telegram_id }
+ *   POST /api/user/mark-onboarded         { telegram_id }
  *   GET  /api/categories
  *   GET  /api/services?category_id=
- *   POST /api/order                       { telegram_id, service_id, link, quantity }
+ *   POST /api/order                       { telegram_id, service, link, quantity }
+ *   POST /api/order/refill                { telegram_id, order_id }
  *   GET  /api/orders?telegram_id=
  *   GET  /api/transactions?telegram_id=
  *   POST /api/ad-reward                   { telegram_id }
  *   GET  /api/force-join
  *   POST /api/verify-join                 { telegram_id }
  *
- * Reseller / child API (standard SMM-panel style — see /docs.html):
- *   POST /api/v2   { key, action: 'services' | 'add' | 'status' | 'balance', ... }
+ * Reseller / child API (see /docs.html):
+ *   POST /api/v2   { key, action: services|add|status|refill|refill_status|cancel|balance, ... }
+ *
+ * Telegram bot webhook (set via Admin → Settings → Bot Control):
+ *   POST /api/telegram/webhook?secret=...
  *
  * Admin routes — require header X-Admin-Password:
  *   POST /api/admin/login
@@ -29,6 +34,12 @@
  *   GET/PUT /api/admin/users(/:id)    GET /api/admin/users/:id/detail
  *   GET/POST/PUT/DELETE /api/admin/force-join(/:id)
  *   GET/PUT /api/admin/settings
+ *   POST /api/admin/telegram/set-webhook
+ *   POST /api/admin/broadcast
+ *
+ * Cron (wrangler.jsonc triggers.crons):
+ *   "*\/5 * * * *"  -> sync Processing orders + pending refills from the provider
+ *   "0 * * * *"     -> daily broadcast, once per configured hour
  */
 
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
@@ -50,6 +61,23 @@ function withCORS(headers = {}) {
 function genToken() {
   const bytes = crypto.getRandomValues(new Uint8Array(24));
   return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+function randomSecret() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+function parseIdList(raw) {
+  return String(raw || "").split(",").map((s) => s.trim()).filter(Boolean).slice(0, 100);
+}
+
+async function genPublicId(db) {
+  for (let i = 0; i < 20; i++) {
+    const candidate = 100000 + Math.floor(Math.random() * 900000);
+    const exists = await db.prepare("SELECT id FROM services WHERE public_id = ?").bind(candidate).first();
+    if (!exists) return candidate;
+  }
+  return 100000 + Math.floor(Math.random() * 900000);
 }
 
 // ---------- Telegram WebApp initData validation ----------
@@ -87,6 +115,9 @@ async function getSetting(db, key, fallback = null) {
   const row = await db.prepare("SELECT value FROM settings WHERE key = ?").bind(key).first();
   return row ? row.value : fallback;
 }
+async function setSetting(db, key, value) {
+  await db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(key, String(value)).run();
+}
 async function requireAdmin(request, env) {
   const supplied = request.headers.get("X-Admin-Password") || "";
   const expected = (await getSetting(env.DB, "admin_password")) || env.ADMIN_PASSWORD || "changeme123";
@@ -112,30 +143,25 @@ async function getOrCreateUser(db, tgUser) {
 }
 
 // ---------- Provider (smmgen.com) integration ----------
-async function placeProviderOrder(db, service, link, quantity) {
-  const autoOrder = (await getSetting(db, "provider_auto_order")) === "1";
+async function providerCall(db, action, params) {
   const apiUrl = await getSetting(db, "provider_api_url");
   const apiKey = await getSetting(db, "provider_api_key");
-  if (!autoOrder || !apiUrl || !apiKey || !service.provider_id) return null;
+  if (!apiUrl || !apiKey) return { error: "Provider not configured" };
   try {
-    const body = new URLSearchParams({ key: apiKey, action: "add", service: String(service.provider_id), link, quantity: String(quantity) });
+    const body = new URLSearchParams({ key: apiKey, action, ...params });
     const res = await fetch(apiUrl, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
     const data = await res.json().catch(() => null);
-    if (data && data.order) return { providerOrderId: String(data.order) };
-    return { error: (data && data.error) || "Provider returned an unexpected response" };
+    return data || { error: "Provider returned an unexpected response" };
   } catch (e) {
     return { error: `Provider request failed: ${e.message}` };
   }
 }
-async function fetchProviderStatus(db, providerOrderId) {
-  const apiUrl = await getSetting(db, "provider_api_url");
-  const apiKey = await getSetting(db, "provider_api_key");
-  if (!apiUrl || !apiKey || !providerOrderId) return null;
-  try {
-    const body = new URLSearchParams({ key: apiKey, action: "status", order: providerOrderId });
-    const res = await fetch(apiUrl, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
-    return await res.json().catch(() => null);
-  } catch { return null; }
+async function placeProviderOrder(db, service, link, quantity) {
+  const autoOrder = (await getSetting(db, "provider_auto_order")) === "1";
+  if (!autoOrder || !service.provider_id) return null;
+  const data = await providerCall(db, "add", { service: String(service.provider_id), link, quantity: String(quantity) });
+  if (data && data.order) return { providerOrderId: String(data.order) };
+  return { error: (data && data.error) || "Provider returned an unexpected response" };
 }
 function mapProviderStatus(providerStatus) {
   const s = (providerStatus || "").toLowerCase();
@@ -145,11 +171,15 @@ function mapProviderStatus(providerStatus) {
   if (s.includes("process") || s.includes("in progress")) return "Processing";
   return null;
 }
+async function refundOrder(db, order, note) {
+  await db.prepare("UPDATE users SET balance = balance + ? WHERE id = ?").bind(order.charge, order.user_id).run();
+  await db.prepare("INSERT INTO transactions (user_id, type, amount, note) VALUES (?, 'admin_add', ?, ?)").bind(order.user_id, order.charge, note).run();
+}
 
-async function createOrder(db, user, serviceId, link, quantity, source) {
+async function createOrder(db, user, servicePublicId, link, quantity, source) {
   const service = await db.prepare(
-    "SELECT s.*, c.name AS category_name FROM services s JOIN categories c ON c.id = s.category_id WHERE s.id = ? AND s.status = 'active'"
-  ).bind(serviceId).first();
+    "SELECT s.*, c.name AS category_name FROM services s JOIN categories c ON c.id = s.category_id WHERE s.public_id = ? AND s.status = 'active'"
+  ).bind(servicePublicId).first();
   if (!service) return { error: "Service not found or inactive" };
 
   const qty = parseInt(quantity, 10);
@@ -158,15 +188,16 @@ async function createOrder(db, user, serviceId, link, quantity, source) {
   }
   if (!/^https?:\/\//i.test(link || "")) return { error: "Please provide a valid link starting with http(s)://" };
 
-  const charge = Math.round(((service.rate * qty) / 1000) * 100) / 100;
+  const charge = Math.round(((service.rate * qty) / 1000) * 1e8) / 1e8;
   if (charge <= 0) return { error: "Invalid charge calculated" };
   if (user.balance < charge) return { error: "Insufficient balance" };
 
   await db.prepare("UPDATE users SET balance = balance - ? WHERE id = ?").bind(charge, user.id).run();
+  const refillAvailable = service.refill_days > 0 ? 1 : 0;
   const insert = await db.prepare(
-    `INSERT INTO orders (user_id, service_id, service_name, category_name, link, quantity, charge, status, source)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', ?)`
-  ).bind(user.id, service.id, service.name, service.category_name, link, qty, charge, source).run();
+    `INSERT INTO orders (user_id, service_id, service_public_id, service_name, category_name, link, quantity, charge, status, source, refill_available)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?)`
+  ).bind(user.id, service.id, service.public_id, service.name, service.category_name, link, qty, charge, source, refillAvailable).run();
   const orderId = insert.meta.last_row_id;
   await db.prepare("INSERT INTO transactions (user_id, type, amount, note) VALUES (?, 'order', ?, ?)")
     .bind(user.id, -charge, `Order #${orderId}: ${service.name}`).run();
@@ -195,6 +226,41 @@ async function checkChannelMembership(botToken, username, telegramId) {
   } catch { return false; }
 }
 
+// ---------- Telegram bot helpers ----------
+async function tgSendMessage(botToken, chatId, text, buttonText, buttonUrl) {
+  const body = { chat_id: chatId, text, parse_mode: "HTML" };
+  if (buttonText && buttonUrl) body.reply_markup = { inline_keyboard: [[{ text: buttonText, web_app: { url: buttonUrl } }]] };
+  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  return res.json();
+}
+async function tgSendPhoto(botToken, chatId, photoUrl, caption, buttonText, buttonUrl) {
+  const body = { chat_id: chatId, photo: photoUrl, caption, parse_mode: "HTML" };
+  if (buttonText && buttonUrl) body.reply_markup = { inline_keyboard: [[{ text: buttonText, web_app: { url: buttonUrl } }]] };
+  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  return res.json();
+}
+async function sendToUser(botToken, chatId, text, imageUrl, buttonText, buttonUrl) {
+  if (imageUrl) return tgSendPhoto(botToken, chatId, imageUrl, text, buttonText, buttonUrl);
+  return tgSendMessage(botToken, chatId, text, buttonText, buttonUrl);
+}
+
+async function broadcastToAllUsers(db, botToken, appUrl, { text, imageUrl, buttonText, buttonUrl }) {
+  const { results: users } = await db.prepare("SELECT telegram_id FROM users WHERE banned = 0").all();
+  let sent = 0, failed = 0;
+  const finalButtonUrl = buttonUrl || appUrl;
+  for (const u of users) {
+    try {
+      const res = await sendToUser(botToken, u.telegram_id, text, imageUrl || null, buttonText || null, finalButtonUrl);
+      if (res && res.ok) sent++; else failed++;
+    } catch { failed++; }
+  }
+  await setSetting(db, "broadcast_last_result", JSON.stringify({ sent, failed, total: users.length, at: new Date().toISOString() }));
+}
+
 // ================= ROUTER =================
 export default {
   async fetch(request, env, ctx) {
@@ -202,14 +268,81 @@ export default {
     const { pathname } = url;
     if (request.method === "OPTIONS") return new Response(null, { headers: withCORS() });
     if (pathname.startsWith("/api/")) {
-      try { return await handleApi(request, env, url, pathname); }
+      try { return await handleApi(request, env, url, pathname, ctx); }
       catch (e) { return err(`Server error: ${e.message}`, 500); }
     }
     return env.ASSETS.fetch(request);
   },
+
+  async scheduled(event, env, ctx) {
+    const db = env.DB;
+    if (event.cron === "*/5 * * * *") {
+      ctx.waitUntil(syncProcessingOrders(db));
+    } else if (event.cron === "0 * * * *") {
+      ctx.waitUntil(maybeSendDailyBroadcast(db, env));
+    }
+  },
 };
 
-async function handleApi(request, env, url, pathname) {
+// ---------- Cron jobs ----------
+async function syncProcessingOrders(db) {
+  const { results: orders } = await db.prepare(
+    "SELECT * FROM orders WHERE status IN ('Pending','Processing') AND provider_order_id IS NOT NULL LIMIT 100"
+  ).all();
+  if (orders.length) {
+    const ids = orders.map((o) => o.provider_order_id).join(",");
+    const data = await providerCall(db, "status", { orders: ids });
+    if (data && !data.error) {
+      for (const o of orders) {
+        const entry = data[o.provider_order_id];
+        if (!entry || entry.error) continue;
+        const mapped = mapProviderStatus(entry.status);
+        if (mapped && mapped !== o.status) {
+          if (mapped === "Cancelled" && o.status !== "Cancelled") await refundOrder(db, o, `Refund for cancelled order #${o.id}`);
+          await db.prepare("UPDATE orders SET status = ? WHERE id = ?").bind(mapped, o.id).run();
+        }
+      }
+    }
+  }
+
+  const { results: refills } = await db.prepare("SELECT * FROM orders WHERE refill_status = 'Pending' AND refill_id IS NOT NULL LIMIT 100").all();
+  if (refills.length) {
+    const ids = refills.map((o) => o.refill_id).join(",");
+    const data = await providerCall(db, "refill_status", { refills: ids });
+    if (data && !data.error) {
+      for (const o of refills) {
+        const entry = data[o.refill_id];
+        if (!entry || entry.error) continue;
+        const status = entry.status;
+        if (status && status !== o.refill_status) {
+          await db.prepare("UPDATE orders SET refill_status = ? WHERE id = ?").bind(status, o.id).run();
+        }
+      }
+    }
+  }
+}
+
+async function maybeSendDailyBroadcast(db, env) {
+  const enabled = (await getSetting(db, "daily_broadcast_enabled")) === "1";
+  if (!enabled) return;
+  const hour = parseInt((await getSetting(db, "daily_broadcast_hour")) || "12", 10);
+  const currentHour = new Date().getUTCHours();
+  if (currentHour !== hour) return;
+  const lastSent = await getSetting(db, "daily_broadcast_last_sent");
+  if (lastSent === todayStr()) return;
+
+  const botToken = (await getSetting(db, "bot_token")) || env.BOT_TOKEN;
+  if (!botToken) return;
+  const text = (await getSetting(db, "daily_broadcast_text")) || "Don't forget to watch today's ads!";
+  const imageUrl = await getSetting(db, "daily_broadcast_image");
+  const buttonText = (await getSetting(db, "daily_broadcast_button_text")) || "Open App";
+  const appUrl = env.APP_URL || "";
+
+  await broadcastToAllUsers(db, botToken, appUrl, { text, imageUrl, buttonText, buttonUrl: appUrl });
+  await setSetting(db, "daily_broadcast_last_sent", todayStr());
+}
+
+async function handleApi(request, env, url, pathname, ctx) {
   const db = env.DB;
   const method = request.method;
 
@@ -275,6 +408,13 @@ async function handleApi(request, env, url, pathname) {
     return json({ ok: true, api_token: token });
   }
 
+  if (pathname === "/api/user/mark-onboarded" && method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    if (!body.telegram_id) return err("telegram_id required");
+    await db.prepare("UPDATE users SET onboarded = 1 WHERE telegram_id = ?").bind(body.telegram_id).run();
+    return json({ ok: true });
+  }
+
   if (pathname === "/api/categories" && method === "GET") {
     const { results } = await db.prepare("SELECT * FROM categories WHERE status = 'active' ORDER BY sort_order ASC, id ASC").all();
     return json({ ok: true, categories: results });
@@ -291,14 +431,34 @@ async function handleApi(request, env, url, pathname) {
 
   if (pathname === "/api/order" && method === "POST") {
     const body = await request.json().catch(() => ({}));
-    const { telegram_id, service_id, link, quantity } = body;
-    if (!telegram_id || !service_id || !link || !quantity) return err("Missing required fields");
+    const { telegram_id, link, quantity } = body;
+    const servicePublicId = body.service || body.service_id;
+    if (!telegram_id || !servicePublicId || !link || !quantity) return err("Missing required fields");
     const user = await db.prepare("SELECT * FROM users WHERE telegram_id = ?").bind(telegram_id).first();
     if (!user) return err("User not found", 404);
     if (user.banned) return err("Account suspended", 403);
-    const result = await createOrder(db, user, service_id, link, quantity, "app");
+    const result = await createOrder(db, user, servicePublicId, link, quantity, "app");
     if (result.error) return err(result.error, result.error === "Insufficient balance" ? 402 : 400);
     return json({ ok: true, order: result.order, balance: result.balance });
+  }
+
+  if (pathname === "/api/order/refill" && method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    if (!body.telegram_id || !body.order_id) return err("telegram_id and order_id required");
+    const user = await db.prepare("SELECT * FROM users WHERE telegram_id = ?").bind(body.telegram_id).first();
+    if (!user) return err("User not found", 404);
+    const order = await db.prepare("SELECT * FROM orders WHERE id = ? AND user_id = ?").bind(body.order_id, user.id).first();
+    if (!order) return err("Order not found", 404);
+    if (!order.refill_available) return err("Refill is not available for this order");
+    if (order.status !== "Completed") return err("Refill can only be requested after the order is Completed");
+    if (order.refill_status === "Pending") return err("A refill request is already pending for this order");
+    if (!order.provider_order_id) return err("This order has no provider reference to refill");
+
+    const data = await providerCall(db, "refill", { order: order.provider_order_id });
+    if (!data || data.error) return err((data && data.error) || "Refill request failed");
+    const refillId = String(data.refill);
+    await db.prepare("UPDATE orders SET refill_id = ?, refill_status = 'Pending' WHERE id = ?").bind(refillId, order.id).run();
+    return json({ ok: true, refill_id: refillId });
   }
 
   if (pathname === "/api/orders" && method === "GET") {
@@ -369,6 +529,13 @@ async function handleApi(request, env, url, pathname) {
   // ---------- Reseller / child API ----------
   if (pathname === "/api/v2" && method === "POST") return handleResellerApi(db, request);
 
+  // ---------- Telegram webhook ----------
+  if (pathname === "/api/telegram/webhook" && method === "POST") {
+    const secret = await getSetting(db, "bot_webhook_secret");
+    if (secret && url.searchParams.get("secret") !== secret) return err("Unauthorized", 401);
+    return handleTelegramWebhook(db, env, request);
+  }
+
   // ---------- Admin ----------
   if (pathname === "/api/admin/login" && method === "POST") {
     const body = await request.json().catch(() => ({}));
@@ -379,10 +546,31 @@ async function handleApi(request, env, url, pathname) {
   if (pathname.startsWith("/api/admin/")) {
     const isAdmin = await requireAdmin(request, env);
     if (!isAdmin) return err("Unauthorized", 401);
-    return handleAdmin(db, env, method, pathname, request, url);
+    return handleAdmin(db, env, method, pathname, request, url, ctx);
   }
 
   return err("Not found", 404);
+}
+
+// ---------- Telegram webhook handler ----------
+async function handleTelegramWebhook(db, env, request) {
+  const update = await request.json().catch(() => ({}));
+  const message = update.message;
+  if (!message) return json({ ok: true });
+
+  const chatId = message.chat.id;
+  const text = message.text || "";
+  const botToken = (await getSetting(db, "bot_token")) || env.BOT_TOKEN;
+  if (!botToken) return json({ ok: true });
+
+  if (text.startsWith("/start")) {
+    const startText = (await getSetting(db, "start_text")) || "Welcome!";
+    const startImage = await getSetting(db, "start_image_url");
+    const buttonText = (await getSetting(db, "start_button_text")) || "Open App";
+    const appUrl = env.APP_URL || `https://${new URL(request.url).host}`;
+    await sendToUser(botToken, chatId, startText, startImage, buttonText, appUrl);
+  }
+  return json({ ok: true });
 }
 
 // ---------- Reseller API ----------
@@ -402,35 +590,121 @@ async function handleResellerApi(db, request) {
 
   if (action === "services") {
     const { results } = await db.prepare(
-      `SELECT s.id AS service, s.name, c.name AS category, s.rate, s.min_qty AS min, s.max_qty AS max
-       FROM services s JOIN categories c ON c.id = s.category_id WHERE s.status = 'active' ORDER BY s.id ASC`
+      `SELECT s.public_id AS service, s.name, c.name AS category, s.rate, s.min_qty AS min, s.max_qty AS max, s.refill_days
+       FROM services s JOIN categories c ON c.id = s.category_id WHERE s.status = 'active' ORDER BY s.public_id ASC`
     ).all();
-    return json(results);
+    return json(results.map((r) => ({
+      service: r.service, name: r.name, type: "Default", category: r.category,
+      rate: String(r.rate), min: String(r.min), max: String(r.max),
+      refill: r.refill_days > 0, cancel: true,
+    })));
   }
+
   if (action === "balance") {
-    const currency = (await getSetting(db, "currency")) || "BDT";
-    return json({ balance: String(user.balance.toFixed(2)), currency });
+    const currency = (await getSetting(db, "currency")) || "USDT";
+    return json({ balance: user.balance.toFixed(8), currency });
   }
+
   if (action === "add") {
     const result = await createOrder(db, user, params.service, params.link, params.quantity, "api");
     if (result.error) return json({ error: result.error });
     return json({ order: result.order.id });
   }
+
   if (action === "status") {
+    const currency = (await getSetting(db, "currency")) || "USDT";
+    const buildEntry = async (order) => {
+      let remains = 0, startCount = 0, status = order.status;
+      if (order.provider_order_id) {
+        const data = await providerCall(db, "status", { order: order.provider_order_id });
+        if (data && !data.error) { remains = data.remains ?? 0; startCount = data.start_count ?? 0; }
+      }
+      return { charge: order.charge.toFixed(4), start_count: String(startCount), status, remains: String(remains), currency };
+    };
+    if (params.orders) {
+      const ids = parseIdList(params.orders);
+      const out = {};
+      for (const id of ids) {
+        const order = await db.prepare("SELECT * FROM orders WHERE id = ? AND user_id = ?").bind(id, user.id).first();
+        out[id] = order ? await buildEntry(order) : { error: "Incorrect order ID" };
+      }
+      return json(out);
+    }
     if (!params.order) return json({ error: "order id required" });
     const order = await db.prepare("SELECT * FROM orders WHERE id = ? AND user_id = ?").bind(params.order, user.id).first();
     if (!order) return json({ error: "Order not found" });
-    let remains = 0, startCount = 0;
-    if (order.provider_order_id) {
-      const providerData = await fetchProviderStatus(db, order.provider_order_id);
-      if (providerData && !providerData.error) { remains = providerData.remains ?? 0; startCount = providerData.start_count ?? 0; }
-    }
-    return json({ charge: order.charge.toFixed(4), start_count: String(startCount), status: order.status, remains: String(remains), currency: (await getSetting(db, "currency")) || "BDT" });
+    return json(await buildEntry(order));
   }
+
+  if (action === "refill") {
+    const doRefill = async (orderId) => {
+      const order = await db.prepare("SELECT * FROM orders WHERE id = ? AND user_id = ?").bind(orderId, user.id).first();
+      if (!order) return { error: "Incorrect order ID" };
+      if (!order.refill_available) return { error: "Refill not available for this order" };
+      if (order.status !== "Completed") return { error: "Order is not completed yet" };
+      if (order.refill_status === "Pending") return { error: "Refill already pending" };
+      if (!order.provider_order_id) return { error: "No provider reference to refill" };
+      const data = await providerCall(db, "refill", { order: order.provider_order_id });
+      if (!data || data.error) return { error: (data && data.error) || "Refill request failed" };
+      const refillId = String(data.refill);
+      await db.prepare("UPDATE orders SET refill_id = ?, refill_status = 'Pending' WHERE id = ?").bind(refillId, order.id).run();
+      return refillId;
+    };
+    if (params.orders) {
+      const ids = parseIdList(params.orders);
+      const out = {};
+      for (const id of ids) {
+        const result = await doRefill(id);
+        out[id] = { order: Number(id), refill: typeof result === "string" ? Number(result) || result : result };
+      }
+      return json(out);
+    }
+    if (!params.order) return json({ error: "order id required" });
+    const result = await doRefill(params.order);
+    if (typeof result !== "string") return json(result);
+    return json({ refill: result });
+  }
+
+  if (action === "refill_status") {
+    const buildStatus = async (refillId) => {
+      const order = await db.prepare("SELECT * FROM orders WHERE refill_id = ? AND user_id = ?").bind(refillId, user.id).first();
+      if (!order) return { error: "Refill not found" };
+      return { status: order.refill_status || "Pending" };
+    };
+    if (params.refills) {
+      const ids = parseIdList(params.refills);
+      const out = {};
+      for (const id of ids) {
+        const r = await buildStatus(id);
+        out[id] = { refill: Number(id) || id, status: r.status || r.error };
+      }
+      return json(out);
+    }
+    if (!params.refill) return json({ error: "refill id required" });
+    return json(await buildStatus(params.refill));
+  }
+
+  if (action === "cancel") {
+    const doCancel = async (orderId) => {
+      const order = await db.prepare("SELECT * FROM orders WHERE id = ? AND user_id = ?").bind(orderId, user.id).first();
+      if (!order) return { error: "Incorrect order ID" };
+      if (order.status === "Cancelled" || order.status === "Completed") return { error: `Order already ${order.status}` };
+      if (order.provider_order_id) await providerCall(db, "cancel", { orders: order.provider_order_id });
+      await refundOrder(db, order, `Refund for cancelled order #${order.id}`);
+      await db.prepare("UPDATE orders SET status = 'Cancelled' WHERE id = ?").bind(order.id).run();
+      return 1;
+    };
+    const ids = parseIdList(params.orders || params.order);
+    if (!ids.length) return json({ error: "order id(s) required" });
+    const out = {};
+    for (const id of ids) out[id] = { order: Number(id), cancel: await doCancel(id) };
+    return json(out);
+  }
+
   return json({ error: "Incorrect action" });
 }
 
-async function handleAdmin(db, env, method, pathname, request, url) {
+async function handleAdmin(db, env, method, pathname, request, url, ctx) {
   // ---- stats ----
   if (pathname === "/api/admin/stats" && method === "GET") {
     const users = await db.prepare("SELECT COUNT(*) AS c FROM users").first();
@@ -474,16 +748,27 @@ async function handleAdmin(db, env, method, pathname, request, url) {
   if (pathname === "/api/admin/services" && method === "POST") {
     const b = await request.json().catch(() => ({}));
     if (!b.name || !b.category_id || !b.rate) return err("name, category_id, rate required");
+    const publicId = await genPublicId(db);
     const res = await db.prepare(
-      `INSERT INTO services (category_id, name, rate, min_qty, max_qty, description, provider_id, status, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(b.category_id, b.name, b.rate, b.min_qty || 100, b.max_qty || 10000, b.description || null, b.provider_id || null, b.status || "active", b.sort_order || 0).run();
-    return json({ ok: true, id: res.meta.last_row_id });
+      `INSERT INTO services (public_id, category_id, name, rate, min_qty, max_qty, description, avg_time, link_type, start_type, speed_info, refill_days, provider_id, status, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(
+      publicId, b.category_id, b.name, b.rate, b.min_qty || 100, b.max_qty || 10000, b.description || null,
+      b.avg_time || null, b.link_type || null, b.start_type || null, b.speed_info || null, b.refill_days || 0,
+      b.provider_id || null, b.status || "active", b.sort_order || 0
+    ).run();
+    return json({ ok: true, id: res.meta.last_row_id, public_id: publicId });
   }
   m = pathname.match(/^\/api\/admin\/services\/(\d+)$/);
   if (m && method === "PUT") {
     const b = await request.json().catch(() => ({}));
-    await db.prepare(`UPDATE services SET category_id=?, name=?, rate=?, min_qty=?, max_qty=?, description=?, provider_id=?, status=?, sort_order=? WHERE id=?`)
-      .bind(b.category_id, b.name, b.rate, b.min_qty, b.max_qty, b.description || null, b.provider_id || null, b.status || "active", b.sort_order ?? 0, m[1]).run();
+    await db.prepare(
+      `UPDATE services SET category_id=?, name=?, rate=?, min_qty=?, max_qty=?, description=?, avg_time=?, link_type=?, start_type=?, speed_info=?, refill_days=?, provider_id=?, status=?, sort_order=? WHERE id=?`
+    ).bind(
+      b.category_id, b.name, b.rate, b.min_qty, b.max_qty, b.description || null,
+      b.avg_time || null, b.link_type || null, b.start_type || null, b.speed_info || null, b.refill_days || 0,
+      b.provider_id || null, b.status || "active", b.sort_order ?? 0, m[1]
+    ).run();
     return json({ ok: true });
   }
   if (m && method === "DELETE") { await db.prepare("DELETE FROM services WHERE id = ?").bind(m[1]).run(); return json({ ok: true }); }
@@ -504,11 +789,7 @@ async function handleAdmin(db, env, method, pathname, request, url) {
     if (!allowed.includes(b.status)) return err("Invalid status");
     const order = await db.prepare("SELECT * FROM orders WHERE id = ?").bind(m[1]).first();
     if (!order) return err("Order not found", 404);
-    if (b.status === "Cancelled" && order.status !== "Cancelled") {
-      await db.prepare("UPDATE users SET balance = balance + ? WHERE id = ?").bind(order.charge, order.user_id).run();
-      await db.prepare("INSERT INTO transactions (user_id, type, amount, note) VALUES (?, 'admin_add', ?, ?)")
-        .bind(order.user_id, order.charge, `Refund for cancelled order #${order.id}`).run();
-    }
+    if (b.status === "Cancelled" && order.status !== "Cancelled") await refundOrder(db, order, `Refund for cancelled order #${order.id}`);
     await db.prepare("UPDATE orders SET status = ? WHERE id = ?").bind(b.status, m[1]).run();
     return json({ ok: true });
   }
@@ -517,15 +798,11 @@ async function handleAdmin(db, env, method, pathname, request, url) {
     const order = await db.prepare("SELECT * FROM orders WHERE id = ?").bind(m[1]).first();
     if (!order) return err("Order not found", 404);
     if (!order.provider_order_id) return err("This order has no provider order id to sync");
-    const data = await fetchProviderStatus(db, order.provider_order_id);
+    const data = await providerCall(db, "status", { order: order.provider_order_id });
     if (!data || data.error) return err((data && data.error) || "Provider sync failed");
     const mapped = mapProviderStatus(data.status);
     if (mapped && mapped !== order.status) {
-      if (mapped === "Cancelled" && order.status !== "Cancelled") {
-        await db.prepare("UPDATE users SET balance = balance + ? WHERE id = ?").bind(order.charge, order.user_id).run();
-        await db.prepare("INSERT INTO transactions (user_id, type, amount, note) VALUES (?, 'admin_add', ?, ?)")
-          .bind(order.user_id, order.charge, `Refund for cancelled order #${order.id}`).run();
-      }
+      if (mapped === "Cancelled" && order.status !== "Cancelled") await refundOrder(db, order, `Refund for cancelled order #${order.id}`);
       await db.prepare("UPDATE orders SET status = ? WHERE id = ?").bind(mapped, m[1]).run();
     }
     return json({ ok: true, provider: data, status: mapped || order.status });
@@ -592,11 +869,43 @@ async function handleAdmin(db, env, method, pathname, request, url) {
   if (pathname === "/api/admin/settings" && method === "GET") return json({ ok: true, settings: await getSettings(db) });
   if (pathname === "/api/admin/settings" && method === "PUT") {
     const b = await request.json().catch(() => ({}));
-    const stmts = Object.entries(b).map(([k, v]) =>
-      db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(k, String(v))
-    );
+    const stmts = Object.entries(b).map(([k, v]) => db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(k, String(v)));
     if (stmts.length) await db.batch(stmts);
     return json({ ok: true });
+  }
+
+  // ---- Telegram bot: set webhook ----
+  if (pathname === "/api/admin/telegram/set-webhook" && method === "POST") {
+    const botToken = (await getSetting(db, "bot_token")) || env.BOT_TOKEN;
+    if (!botToken) return err("Set your Bot Token first");
+    let secret = await getSetting(db, "bot_webhook_secret");
+    if (!secret) { secret = randomSecret(); await setSetting(db, "bot_webhook_secret", secret); }
+    const host = new URL(request.url).host;
+    const webhookUrl = `https://${host}/api/telegram/webhook?secret=${secret}`;
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/setWebhook`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: webhookUrl }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!data || !data.ok) return err((data && data.description) || "Failed to set webhook");
+    return json({ ok: true, webhook_url: webhookUrl, telegram_response: data });
+  }
+
+  // ---- Broadcast ----
+  if (pathname === "/api/admin/broadcast" && method === "POST") {
+    const b = await request.json().catch(() => ({}));
+    if (!b.text) return err("Message text is required");
+    const botToken = (await getSetting(db, "bot_token")) || env.BOT_TOKEN;
+    if (!botToken) return err("Set your Bot Token first");
+    const appUrl = env.APP_URL || `https://${new URL(request.url).host}`;
+    ctx.waitUntil(broadcastToAllUsers(db, botToken, appUrl, {
+      text: b.text, imageUrl: b.image_url || null, buttonText: b.button_text || null, buttonUrl: b.button_url || null,
+    }));
+    return json({ ok: true, message: "Broadcast started — check back for results shortly." });
+  }
+  if (pathname === "/api/admin/broadcast/last-result" && method === "GET") {
+    const raw = await getSetting(db, "broadcast_last_result");
+    return json({ ok: true, result: raw ? JSON.parse(raw) : null });
   }
 
   return err("Not found", 404);
