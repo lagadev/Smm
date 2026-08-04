@@ -32,6 +32,7 @@
     <button class="side-link" data-tab="orders"><i class="fa-solid fa-bag-shopping"></i> Orders</button>
     <button class="side-link" data-tab="users"><i class="fa-solid fa-users"></i> Users</button>
     <button class="side-link" data-tab="forcejoin"><i class="fa-solid fa-link"></i> Force Join</button>
+    <button class="side-link" data-tab="broadcast"><i class="fa-solid fa-bullhorn"></i> Broadcast</button>
     <button class="side-link" data-tab="settings"><i class="fa-solid fa-gear"></i> Settings</button>
     <button class="side-link logout" id="logout-button"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</button>
   </aside>
@@ -75,7 +76,7 @@
           <h3>Services</h3>
           <button class="btn btn-primary btn-sm" id="add-service-btn"><i class="fa-solid fa-plus"></i> Add Service</button>
         </div>
-        <div class="table-wrap"><table class="admin-table" id="services-table"><thead><tr><th>#</th><th>Category</th><th>Name</th><th>Rate/1000</th><th>Min</th><th>Max</th><th>Status</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+        <div class="table-wrap"><table class="admin-table" id="services-table"><thead><tr><th>ID</th><th>Category</th><th>Name</th><th>Rate/1000</th><th>Min</th><th>Max</th><th>Refill</th><th>Status</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
       </div>
     </section>
 
@@ -115,6 +116,40 @@
         <div class="panel-head"><h3>Force-Join Channels</h3><button class="btn btn-primary btn-sm" id="add-fj-btn"><i class="fa-solid fa-plus"></i> Add Channel</button></div>
         <p class="card-sub" style="margin-top:-6px;">Users must join every active channel before the Mini App unlocks. Verification uses the Bot Token from Settings, so your bot must be a member/admin of each channel.</p>
         <div class="table-wrap"><table class="admin-table" id="fj-table"><thead><tr><th>#</th><th>Title</th><th>Username</th><th>Order</th><th>Status</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- Broadcast -->
+    <section class="admin-tab" id="tab-broadcast">
+      <div class="panel">
+        <h3 style="margin-top:0;">Send Broadcast Now</h3>
+        <p class="card-sub" style="margin-top:-6px;">Sends to every non-banned user via the bot. Large lists may take a few minutes to finish sending.</p>
+        <label>Message Text</label><textarea class="field" id="bc-text" rows="3" placeholder="Your announcement..."></textarea>
+        <div class="form-grid" style="margin-top:12px;">
+          <div><label>Image URL (optional)</label><input class="field" id="bc-image"></div>
+          <div><label>Button Text (optional)</label><input class="field" id="bc-button-text" placeholder="Open App"></div>
+          <div class="full"><label>Button URL (optional — defaults to the Mini App)</label><input class="field" id="bc-button-url"></div>
+        </div>
+        <button class="btn btn-primary" id="send-broadcast-btn" style="margin-top:14px;"><i class="fa-solid fa-paper-plane"></i> Send Broadcast</button>
+        <p class="card-sub" id="bc-last-result" style="margin-top:12px;margin-bottom:0;"></p>
+      </div>
+
+      <div class="panel">
+        <h3 style="margin-top:0;">Daily Auto Broadcast</h3>
+        <p class="card-sub" style="margin-top:-6px;">Runs automatically once a day — great for reminding users to finish today's ads.</p>
+        <div class="form-grid">
+          <div><label>Status</label>
+            <select class="field" id="set-daily_broadcast_enabled">
+              <option value="1">Enabled</option>
+              <option value="0">Disabled</option>
+            </select>
+          </div>
+          <div><label>Send Hour (UTC, 0-23)</label><input class="field" id="set-daily_broadcast_hour" type="number" min="0" max="23"></div>
+          <div class="full"><label>Message Text</label><textarea class="field" id="set-daily_broadcast_text" rows="2"></textarea></div>
+          <div><label>Image URL (optional)</label><input class="field" id="set-daily_broadcast_image"></div>
+          <div><label>Button Text</label><input class="field" id="set-daily_broadcast_button_text"></div>
+        </div>
+        <button class="btn btn-primary" id="save-daily-broadcast-btn" style="margin-top:14px;"><i class="fa-solid fa-floppy-disk"></i> Save Daily Broadcast</button>
       </div>
     </section>
 
@@ -161,6 +196,17 @@
         </div>
       </div>
       <div class="panel">
+        <div class="panel-head"><h3 style="margin:0;">Bot Control — /start</h3></div>
+        <p class="card-sub" style="margin-top:-8px;">Shown when a user sends /start to your bot, with an "Open App" button attached.</p>
+        <div class="form-grid">
+          <div class="full"><label>Start Message</label><textarea class="field" id="set-start_text" rows="3"></textarea></div>
+          <div><label>Start Image URL (optional)</label><input class="field" id="set-start_image_url"></div>
+          <div><label>Button Text</label><input class="field" id="set-start_button_text"></div>
+        </div>
+        <button class="btn btn-outline" id="set-webhook-btn" style="margin-top:12px;"><i class="fa-solid fa-satellite-dish"></i> Set Webhook</button>
+        <p class="card-sub" id="webhook-status" style="margin-top:10px;margin-bottom:0;"></p>
+      </div>
+      <div class="panel">
         <div class="panel-head"><h3 style="margin:0;">Force Join</h3></div>
         <div class="form-grid">
           <div><label>Force-Join Gate</label>
@@ -201,15 +247,23 @@
   <div class="modal-content modal-form">
     <div class="modal-head"><h3 class="card-title" id="service-modal-title" style="margin:0;">Add Service</h3><span class="close-button" onclick="closeModal('serviceModal')">&times;</span></div>
     <input type="hidden" id="service-id">
+    <div id="service-public-id-row" class="hidden"><label>Public Service ID (auto-generated, used in the API)</label><input class="field" id="service-public-id" readonly style="background:var(--surface-2);color:var(--text-dim);"></div>
     <label>Category</label><select class="field" id="service-category"></select>
     <label>Name</label><input class="field" id="service-name" placeholder="e.g. Telegram Channel Members">
-    <label>Rate per 1000</label><input class="field" id="service-rate" type="number" step="0.01">
+    <label>Rate per 1000</label><input class="field" id="service-rate" type="number" step="0.00000001">
     <div class="form-grid">
       <div><label>Min Quantity</label><input class="field" id="service-min" type="number" value="100"></div>
       <div><label>Max Quantity</label><input class="field" id="service-max" type="number" value="10000"></div>
     </div>
+    <div class="form-grid">
+      <div><label>Average Time</label><input class="field" id="service-avgtime" placeholder="e.g. 4 minutes"></div>
+      <div><label>Start Type</label><input class="field" id="service-starttype" placeholder="e.g. Instant"></div>
+      <div><label>Speed Info</label><input class="field" id="service-speed" placeholder="e.g. 100k/Days"></div>
+      <div><label>Refill Days (0 = No Refill)</label><input class="field" id="service-refilldays" type="number" value="0"></div>
+    </div>
+    <label>Link Type</label><input class="field" id="service-linktype" placeholder="e.g. Public link or invite link">
     <label>Description (optional)</label><input class="field" id="service-desc">
-    <label>Provider Service ID (optional)</label><input class="field" id="service-provider">
+    <label>Provider Service ID (for auto-ordering)</label><input class="field" id="service-provider">
     <label>Status</label>
     <select class="field" id="service-status"><option value="active">Active</option><option value="inactive">Inactive</option></select>
     <button class="btn btn-primary btn-block" id="save-service-btn" style="margin-top:8px;">Save Service</button>
