@@ -212,11 +212,29 @@ select.field{ appearance:none; -webkit-appearance:none; background-image:url("da
 .stats-grid-3{ grid-template-columns:repeat(3,1fr); }
 .nav-bar-3{ grid-template-columns:repeat(3,1fr); }
 
-/* ---------- Service info box (New Order) ---------- */
-.service-info-box{ background:var(--surface-2); border:1px solid var(--border); border-radius:11px; padding:12px 14px; margin-top:10px; }
-.sib-row{ display:flex; justify-content:space-between; font-size:12.5px; padding:4px 0; color:var(--text-dim); }
-.sib-row strong{ color:var(--text); font-family:var(--font-display); font-weight:700; }
-.sib-desc{ font-size:12px; color:var(--text-faint); margin-top:6px; padding-top:8px; border-top:1px dashed var(--border); line-height:1.5; }
+/* ---------- Search box (New Order) ---------- */
+.search-box{ display:flex; align-items:center; gap:10px; background:var(--surface-2); border:1px solid var(--border); border-radius:12px; padding:12px 14px; margin-bottom:16px; }
+.search-box i{ color:var(--text-faint); font-size:14px; }
+.search-box input{ border:none; background:transparent; outline:none; flex:1; font-size:14.5px; color:var(--text); font-family:var(--font-body); }
+.search-box input::placeholder{ color:var(--text-faint); }
+
+.step-body.full-width{ flex:1; width:100%; }
+.field-hint{ font-size:12px; color:var(--text-dim); margin-top:6px; }
+.field-readonly{ background:var(--surface-2); color:var(--text-dim); cursor:default; }
+
+.btn-submit{ background:linear-gradient(135deg, #7C3AED, #4F46E5); color:#fff; font-size:16px; padding:15px; margin-top:6px; box-shadow:0 10px 24px rgba(124,58,237,.28); }
+.btn-submit:hover:not(:disabled){ opacity:.94; }
+.btn-submit:disabled{ background:var(--surface-3); color:var(--text-faint); box-shadow:none; }
+
+/* ---------- Service detail card (provider-style gradient) ---------- */
+.service-detail-card{ border-radius:var(--radius-lg); overflow:hidden; margin-bottom:16px; border:1px solid var(--border); animation:fadeUp .3s ease-out; }
+.sdc-header{ background:linear-gradient(135deg, #7C3AED, #4338CA); padding:22px 20px; position:relative; }
+.sdc-badge{ display:inline-block; background:#F59E0B; color:#3B1D00; font-family:var(--font-display); font-weight:800; font-size:13px; padding:6px 16px; border-radius:999px; margin-bottom:12px; }
+.sdc-title{ color:#fff; font-family:var(--font-display); font-weight:700; font-size:15px; line-height:1.5; }
+.sdc-body{ background:var(--surface); padding:18px 20px; }
+.sdc-title-sm{ font-weight:700; font-size:13.5px; margin-bottom:10px; }
+.sdc-row{ display:flex; gap:8px; font-size:13px; padding:5px 0; color:var(--text-dim); }
+.sdc-row strong{ color:var(--text); font-weight:600; }
 
 /* ---------- Profile ---------- */
 #profile-pic-lg{ width:52px; height:52px; border-radius:50%; background:var(--surface-2); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-weight:700; overflow:hidden; color:var(--primary); font-size:20px; flex:0 0 auto; }
