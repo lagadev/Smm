@@ -1,5 +1,5 @@
 // =====================================================
-// TeleGrow — Mini App front-end logic (v3)
+// TeleGrow — Mini App front-end logic (v4)
 // =====================================================
 const API = ""; // same-origin Worker
 
@@ -9,23 +9,16 @@ let state = {
   user: null,
   settings: {},
   categories: [],
-  services: [],
+  services: [],       // all active services (flat), used for search
+  visibleServices: [],
   selectedService: null,
 };
 
 const el = (id) => document.getElementById(id);
 function escapeHTML(s){ if(!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function money(n){ return (Number(n)||0).toFixed(2); }
-// Wallet balance supports high precision (e.g. 8.1658303) while trimming trailing zeros.
-function formatBalance(n){
-  let num = Number(n) || 0;
-  let s = num.toFixed(7);
-  s = s.replace(/0+$/, '');
-  if (s.endsWith('.')) s += '00';
-  const parts = s.split('.');
-  if (parts[1].length < 2) s = num.toFixed(2);
-  return s;
-}
+// Wallet balance always shows a full 8 decimals, e.g. 8.16583030
+function formatBalance(n){ return (Number(n) || 0).toFixed(8); }
 function formatOrderId(id){ return String(60000000 + Number(id)); }
 function safeAlert(msg){ if(tg && tg.showAlert){ tg.showAlert(msg); } else { alert(msg); } }
 function haptic(type){ try{ tg && tg.HapticFeedback && tg.HapticFeedback.notificationOccurred(type); }catch(e){} }
@@ -89,7 +82,7 @@ async function authenticate() {
 async function loadSettings() {
   const { settings } = await api('/api/settings/public');
   state.settings = settings;
-  const sym = settings.currency_symbol || '৳';
+  const sym = settings.currency_symbol || '$';
   document.querySelectorAll('#currency-symbol, .currency-symbol').forEach(n => n.textContent = sym);
   el('ad-reward-label').textContent = `+${sym}${money(settings.ad_reward)} / ad`;
   el('ad-reward-copy').textContent = `Watch a short ad to earn ${sym}${money(settings.ad_reward)} instantly. Up to ${settings.daily_ad_limit} ads per day.`;
@@ -110,14 +103,22 @@ function loadMonetagSDK(zoneId){
   document.body.appendChild(script);
 }
 
-// ---------------- Force-join gate ----------------
+// ---------------- Force-join gate (silent check, only shows if actually missing) ----------------
 async function runForceJoinGate() {
   const { enabled, channels } = await api('/api/force-join');
   if (!enabled || !channels.length) return true;
-  if (sessionStorage.getItem('tg_fj_verified')) return true;
+
+  // Silently verify first — if the user already joined everything, never show the gate at all.
+  let verifyResult;
+  try {
+    verifyResult = await api('/api/verify-join', { method: 'POST', body: JSON.stringify({ telegram_id: state.user.telegram_id }) });
+  } catch (e) {
+    return true; // don't block the app if verification itself fails
+  }
+  if (verifyResult.joined) return true;
 
   el('fj-channel-list').innerHTML = channels.map(c => `
-    <div class="fj-channel" data-username="${escapeHTML(c.username)}">
+    <div class="fj-channel missing" data-username="${escapeHTML(c.username)}">
       <div class="fj-icon"><i class="${escapeHTML(c.icon || 'fa-brands fa-telegram')}"></i></div>
       <div class="fj-title">${escapeHTML(c.title)}<small>@${escapeHTML(c.username)}</small></div>
       <button class="btn btn-sm btn-outline" onclick="safeTgOpen('${(c.invite_link || ('https://t.me/' + c.username)).replace(/'/g,"\\'")}')">Join</button>
@@ -133,7 +134,6 @@ async function runForceJoinGate() {
       try {
         const res = await api('/api/verify-join', { method: 'POST', body: JSON.stringify({ telegram_id: state.user.telegram_id }) });
         if (res.joined) {
-          sessionStorage.setItem('tg_fj_verified', 'true');
           haptic('success');
           el('force-join-gate').classList.add('hidden');
           resolve(true);
@@ -162,7 +162,7 @@ function updateBalanceUI(){ el('total-balance').textContent = formatBalance(stat
 async function loadUserStats(){
   try{
     const { stats } = await api(`/api/user/stats?telegram_id=${state.user.telegram_id}`);
-    const sym = state.settings.currency_symbol || '৳';
+    const sym = state.settings.currency_symbol || '$';
     el('stat-orders').textContent = stats.total_orders;
     el('stat-spent').textContent = sym + money(stats.total_spent);
     el('stat-earned').textContent = sym + money(stats.total_earned);
@@ -193,78 +193,98 @@ async function regenerateToken(){
   else if (confirm('Regenerate your API key? The old key will stop working immediately.')) doIt();
 }
 
-// ---------------- New Order (on Home) ----------------
-function renderCategoryPills(){
-  const wrap = el('category-pills');
-  wrap.innerHTML = '';
-  state.categories.forEach((c, idx) => {
-    const btn = document.createElement('button');
-    btn.className = 'pill' + (idx === 0 ? ' active' : '');
-    btn.innerHTML = `<i class="${escapeHTML(c.icon || 'fa-solid fa-layer-group')}"></i> ${escapeHTML(c.name)}`;
-    btn.onclick = () => selectCategory(c.id, btn);
-    wrap.appendChild(btn);
-  });
-  if (state.categories.length) selectCategory(state.categories[0].id);
+// ---------------- New Order ----------------
+function renderCategorySelect(){
+  const sel = el('category-select');
+  sel.innerHTML = state.categories.map(c => `<option value="${c.id}">${escapeHTML(c.name)}</option>`).join('');
+  if (state.categories.length) loadServicesForCategory(state.categories[0].id);
 }
 
-async function selectCategory(id, btnEl){
-  document.querySelectorAll('#category-pills .pill').forEach(p => p.classList.remove('active'));
-  if (btnEl) btnEl.classList.add('active');
-  const { services } = await api(`/api/services?category_id=${id}`);
-  state.services = services;
+async function loadServicesForCategory(categoryId){
+  const { services } = await api(`/api/services?category_id=${categoryId}`);
+  state.visibleServices = services;
+  renderServiceOptions(services);
+}
+
+function renderServiceOptions(services){
   const sel = el('service-select');
+  const sym = state.settings.currency_symbol || '$';
   sel.innerHTML = '<option value="">Select a service</option>' +
-    services.map(s => `<option value="${s.id}">#${s.id} — ${escapeHTML(s.name)} — ${state.settings.currency_symbol}${money(s.rate)}/1000</option>`).join('');
+    services.map(s => `<option value="${s.public_id}">${s.public_id} - ${escapeHTML(s.name)} ~ ${sym}${money(s.rate)}/1000</option>`).join('');
   state.selectedService = null;
-  el('service-info-box').classList.add('hidden');
-  clearOrderSummary();
+  el('service-detail-card').classList.add('hidden');
+  clearOrderFields();
+}
+
+async function loadAllServicesForSearch(){
+  const { services } = await api('/api/services');
+  state.services = services;
+}
+
+function handleSearch(){
+  const q = el('service-search').value.trim().toLowerCase();
+  if (!q) { loadServicesForCategory(el('category-select').value); return; }
+  const filtered = state.services.filter(s => s.name.toLowerCase().includes(q) || String(s.public_id).includes(q));
+  renderServiceOptions(filtered);
+}
+
+function onCategoryChange(){
+  el('service-search').value = '';
+  loadServicesForCategory(el('category-select').value);
 }
 
 function onServiceChange(){
-  const id = el('service-select').value;
-  state.selectedService = state.services.find(s => String(s.id) === String(id)) || null;
-  const box = el('service-info-box');
-  if (state.selectedService){
-    const s = state.selectedService;
-    el('sib-id').textContent = '#' + s.id;
-    el('sib-rate').textContent = `${state.settings.currency_symbol}${money(s.rate)}`;
-    el('sib-minmax').textContent = `${s.min_qty.toLocaleString()} / ${s.max_qty.toLocaleString()}`;
-    el('sib-desc').textContent = s.description || '';
-    el('sib-desc').classList.toggle('hidden', !s.description);
-    box.classList.remove('hidden');
+  const publicId = el('service-select').value;
+  const pool = state.visibleServices.length ? state.visibleServices : state.services;
+  state.selectedService = pool.find(s => String(s.public_id) === String(publicId)) || null;
+  const s = state.selectedService;
+  const card = el('service-detail-card');
+
+  if (s){
+    el('qty-hint').textContent = `Min: ${s.min_qty.toLocaleString()} - Max: ${s.max_qty.toLocaleString()}`;
     el('order-qty').placeholder = `Between ${s.min_qty} and ${s.max_qty}`;
+    el('order-avgtime').value = s.avg_time || '—';
+
+    const refillText = s.refill_days > 0 ? `${s.refill_days} Days` : 'No Refill';
+    el('sdc-id').textContent = '#' + s.public_id;
+    el('sdc-title').textContent = `${s.public_id} - ${s.name} ~ Max ${s.max_qty.toLocaleString()} ~ ${s.speed_info || ''} ~ ${s.start_type || ''} ~ ${refillText} ~ ${state.settings.currency_symbol}${money(s.rate)} per 1000`;
+    el('sdc-link-type').textContent = s.link_type || '—';
+    el('sdc-start').textContent = s.start_type || '—';
+    el('sdc-speed').textContent = s.speed_info || '—';
+    el('sdc-refill').textContent = refillText;
+    el('sdc-desc').textContent = s.description || '—';
+    el('sdc-desc-row').classList.toggle('hidden', !s.description);
+    card.classList.remove('hidden');
   } else {
-    box.classList.add('hidden');
+    el('qty-hint').textContent = 'Min: — · Max: —';
+    el('order-avgtime').value = '—';
+    card.classList.add('hidden');
   }
-  recomputeOrderSummary();
+  recomputeCharge();
 }
 
-function recomputeOrderSummary(){
+function recomputeCharge(){
   const s = state.selectedService;
   const qty = parseInt(el('order-qty').value, 10);
   const link = el('order-link').value.trim();
-  const sym = state.settings.currency_symbol || '৳';
-  if (!s){ clearOrderSummary(); return; }
-
-  const cat = state.categories.find(c => c.id === s.category_id);
-  el('sum-category').textContent = cat ? cat.name : '—';
-  el('sum-service').textContent = `#${s.id} ${s.name}`;
-  el('sum-qty').textContent = Number.isFinite(qty) ? qty.toLocaleString() : '—';
+  const sym = state.settings.currency_symbol || '$';
+  if (!s){ el('order-charge-field').value = ''; el('confirm-order-button').disabled = true; return; }
 
   let charge = 0, valid = false;
   if (Number.isFinite(qty) && qty >= s.min_qty && qty <= s.max_qty && /^https?:\/\//i.test(link)) {
-    charge = Math.round((s.rate * qty / 1000) * 100) / 100;
+    charge = Math.round((s.rate * qty / 1000) * 1e8) / 1e8;
     valid = true;
   }
-  el('sum-charge').textContent = `${sym}${money(charge)}`;
+  el('order-charge-field').value = valid ? `${sym}${charge.toFixed(8)}` : '';
   el('confirm-order-button').disabled = !valid;
 }
 
-function clearOrderSummary(){
-  el('sum-category').textContent = '—';
-  el('sum-service').textContent = '—';
-  el('sum-qty').textContent = '—';
-  el('sum-charge').textContent = `${state.settings.currency_symbol || '৳'}0.00`;
+function clearOrderFields(){
+  el('order-link').value = '';
+  el('order-qty').value = '';
+  el('qty-hint').textContent = 'Min: — · Max: —';
+  el('order-avgtime').value = '—';
+  el('order-charge-field').value = '';
   el('confirm-order-button').disabled = true;
 }
 
@@ -282,16 +302,17 @@ async function confirmOrder(){
   try{
     const { order, balance } = await api('/api/order', {
       method: 'POST',
-      body: JSON.stringify({ telegram_id: state.user.telegram_id, service_id: s.id, link, quantity: qty }),
+      body: JSON.stringify({ telegram_id: state.user.telegram_id, service: s.public_id, link, quantity: qty }),
     });
     state.user.balance = balance;
     updateBalanceUI();
     loadUserStats();
     haptic('success');
     safeAlert(`Order #${formatOrderId(order.id)} placed! ${state.settings.currency_symbol}${money(order.charge)} deducted from your wallet.`);
-    el('order-link').value = '';
-    el('order-qty').value = '';
-    clearOrderSummary();
+    clearOrderFields();
+    el('service-detail-card').classList.add('hidden');
+    el('service-select').value = '';
+    state.selectedService = null;
   }catch(e){
     haptic('error');
     safeAlert(e.message);
@@ -340,19 +361,40 @@ async function renderOrdersHistory(){
     const { orders } = await api(`/api/orders?telegram_id=${state.user.telegram_id}`);
     const wrap = el('orders-history');
     if (!orders.length){ wrap.innerHTML = emptyState('fa-bag-shopping', 'No orders yet'); return; }
-    wrap.innerHTML = orders.map(o => `
+    wrap.innerHTML = orders.map(o => {
+      let refillHtml = '';
+      if (o.refill_available) {
+        if (o.refill_status === 'Pending') refillHtml = `<span class="status-badge processing" style="margin-top:6px;">Refill Pending</span>`;
+        else if (o.refill_status === 'Completed') refillHtml = `<span class="status-badge completed" style="margin-top:6px;">Refill Completed</span>`;
+        else if (o.status === 'Completed') refillHtml = `<button class="btn btn-sm btn-outline" style="margin-top:8px;" onclick="requestRefill(${o.id})">Refill</button>`;
+      }
+      return `
       <div class="history-item">
         <div class="history-details">
-          <span class="name">${escapeHTML(o.service_name)}</span>
-          <span class="meta">#${formatOrderId(o.id)} · ${new Date(o.created_at).toLocaleDateString()} · Qty ${o.quantity.toLocaleString()}</span>
+          <span class="name">#${o.service_public_id || '—'} ${escapeHTML(o.service_name)}</span>
+          <span class="meta">Order #${formatOrderId(o.id)} · ${new Date(o.created_at).toLocaleDateString()} · Qty ${o.quantity.toLocaleString()}</span>
           <span class="meta" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px;">${escapeHTML(o.link)}</span>
         </div>
         <div class="history-amount">
           <div class="amt">${state.settings.currency_symbol}${money(o.charge)}</div>
           <span class="status-badge ${statusClass(o.status)}">${escapeHTML(o.status)}</span>
+          ${refillHtml}
         </div>
-      </div>`).join('');
+      </div>`;
+    }).join('');
   }catch(e){}
+}
+
+async function requestRefill(orderId){
+  try{
+    await api('/api/order/refill', { method: 'POST', body: JSON.stringify({ telegram_id: state.user.telegram_id, order_id: orderId }) });
+    haptic('success');
+    safeAlert('Refill requested!');
+    renderOrdersHistory();
+  }catch(e){
+    haptic('error');
+    safeAlert(e.message);
+  }
 }
 
 async function renderTransactionsHistory(){
@@ -387,7 +429,7 @@ async function init(){
     hidePreloader();
 
     const joined = await runForceJoinGate();
-    if (!joined) return; // gate resolves the promise once verified; app continues below via resolve chain
+    if (!joined) return;
 
     await bootApp();
   }catch(e){
@@ -401,7 +443,8 @@ async function init(){
 async function bootApp(){
   const { categories } = await api('/api/categories');
   state.categories = categories;
-  renderCategoryPills();
+  await loadAllServicesForSearch();
+  renderCategorySelect();
 
   updateBalanceUI();
   updateTokenUI();
@@ -419,9 +462,11 @@ async function bootApp(){
   el('profile-name').textContent = state.user.first_name || 'User';
   el('profile-id').textContent = 'ID: ' + state.user.telegram_id;
 
+  el('category-select').addEventListener('change', onCategoryChange);
   el('service-select').addEventListener('change', onServiceChange);
-  el('order-link').addEventListener('input', recomputeOrderSummary);
-  el('order-qty').addEventListener('input', recomputeOrderSummary);
+  el('service-search').addEventListener('input', handleSearch);
+  el('order-link').addEventListener('input', recomputeCharge);
+  el('order-qty').addEventListener('input', recomputeCharge);
   el('confirm-order-button').addEventListener('click', confirmOrder);
   el('watch-ad-button').addEventListener('click', watchAd);
   el('copy-token-btn').addEventListener('click', copyToken);
@@ -431,7 +476,8 @@ async function bootApp(){
 
   safeTgAction();
 
-  if (!sessionStorage.getItem('tg_welcomed')) {
+  // One-time welcome — flag is stored server-side (users.onboarded), so it truly shows only once ever.
+  if (!state.user.onboarded) {
     el('welcome-title').textContent = `Welcome to ${state.settings.site_name || 'TeleGrow'}!`;
     el('welcome-message').textContent =
       `Order real, high-quality engagement for Telegram, YouTube, Facebook, Instagram &amp; TikTok.\n\n` +
@@ -441,7 +487,7 @@ async function bootApp(){
       `⚡ Orders are placed automatically with our provider where available.\n` +
       `🔑 Find your personal API key and full docs under the Profile tab.`;
     showModal('welcomeModal');
-    sessionStorage.setItem('tg_welcomed', 'true');
+    api('/api/user/mark-onboarded', { method: 'POST', body: JSON.stringify({ telegram_id: state.user.telegram_id }) }).catch(() => {});
   }
 }
 
