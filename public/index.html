@@ -61,7 +61,7 @@
       <div class="balance-top">
         <div>
           <div class="balance-label">Wallet Balance</div>
-          <div class="balance-amount"><span id="currency-symbol">৳</span><span id="total-balance">0.00</span></div>
+          <div class="balance-amount"><span id="currency-symbol">$</span><span id="total-balance">0.00000000</span><small>USDT</small></div>
         </div>
         <i class="fa-solid fa-wallet" style="font-size:20px;color:rgba(255,255,255,.85);"></i>
       </div>
@@ -79,57 +79,77 @@
 
     <div class="card" id="order-card">
       <h3 class="card-title">New Order</h3>
-      <p class="card-sub">Pick a category, choose a service, and confirm.</p>
+      <p class="card-sub">Search or pick a category, choose a service, and confirm.</p>
 
-      <div class="pill-row" id="category-pills"></div>
+      <div class="search-box">
+        <i class="fa-solid fa-magnifying-glass"></i>
+        <input type="text" id="service-search" placeholder="Search">
+      </div>
 
       <div class="order-steps">
         <div class="step">
-          <div class="step-num">1</div>
-          <div class="step-body">
-            <div class="step-label">Service</div>
-            <select class="field" id="service-select"><option value="">Select a service</option></select>
-            <div class="service-info-box hidden" id="service-info-box">
-              <div class="sib-row"><span>Service ID</span><strong id="sib-id">—</strong></div>
-              <div class="sib-row"><span>Rate / 1000</span><strong id="sib-rate">—</strong></div>
-              <div class="sib-row"><span>Min / Max</span><strong id="sib-minmax">—</strong></div>
-              <div class="sib-desc" id="sib-desc"></div>
-            </div>
+          <div class="step-body full-width">
+            <div class="step-label">Category</div>
+            <select class="field" id="category-select"></select>
           </div>
         </div>
 
         <div class="step">
-          <div class="step-num">2</div>
-          <div class="step-body">
+          <div class="step-body full-width">
+            <div class="step-label">Service</div>
+            <select class="field" id="service-select"><option value="">Select a service</option></select>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-body full-width">
             <div class="step-label">Link</div>
             <input class="field" id="order-link" type="url" placeholder="https://t.me/yourchannel or profile URL">
           </div>
         </div>
 
         <div class="step">
-          <div class="step-num">3</div>
-          <div class="step-body">
+          <div class="step-body full-width">
             <div class="step-label">Quantity</div>
             <input class="field" id="order-qty" type="number" placeholder="e.g. 1000" inputmode="numeric">
+            <div class="field-hint" id="qty-hint">Min: — · Max: —</div>
           </div>
         </div>
 
         <div class="step">
-          <div class="step-num">4</div>
-          <div class="step-body">
-            <div class="step-label">Review &amp; Confirm</div>
-            <div class="order-summary">
-              <div class="order-summary-row"><span>Category</span><strong id="sum-category">—</strong></div>
-              <div class="order-summary-row"><span>Service</span><strong id="sum-service">—</strong></div>
-              <div class="order-summary-row"><span>Quantity</span><strong id="sum-qty">—</strong></div>
-              <div class="order-summary-row total"><span>Total Charge</span><strong id="sum-charge">৳0.00</strong></div>
-            </div>
-            <button class="btn btn-primary btn-block" id="confirm-order-button" style="margin-top:14px;" disabled>
-              <span class="button-text"><i class="fa-solid fa-check"></i> Confirm Order</span>
-              <div class="spinner hidden"></div>
-            </button>
+          <div class="step-body full-width">
+            <div class="step-label">Average time <i class="fa-solid fa-circle-info" style="font-size:11px;color:var(--text-faint);"></i></div>
+            <input class="field field-readonly" id="order-avgtime" readonly value="—">
           </div>
         </div>
+
+        <div class="step">
+          <div class="step-body full-width">
+            <div class="step-label">Charge</div>
+            <input class="field field-readonly" id="order-charge-field" readonly value="">
+          </div>
+        </div>
+
+        <button class="btn btn-submit btn-block" id="confirm-order-button" disabled>
+          <span class="button-text">Submit</span>
+          <div class="spinner hidden"></div>
+        </button>
+      </div>
+    </div>
+
+    <!-- Live service detail card, matches the provider-style layout -->
+    <div class="service-detail-card hidden" id="service-detail-card">
+      <div class="sdc-header">
+        <div class="sdc-badge" id="sdc-id">#100001</div>
+        <div class="sdc-title" id="sdc-title">Service name</div>
+      </div>
+      <div class="sdc-body">
+        <div class="sdc-title-sm">Description</div>
+        <div class="sdc-row"><span>Link:</span><strong id="sdc-link-type">—</strong></div>
+        <div class="sdc-row"><span>Start:</span><strong id="sdc-start">—</strong></div>
+        <div class="sdc-row"><span>Speed:</span><strong id="sdc-speed">—</strong></div>
+        <div class="sdc-row"><span>Refill:</span><strong id="sdc-refill">—</strong></div>
+        <div class="sdc-row" id="sdc-desc-row"><span>Note:</span><strong id="sdc-desc">—</strong></div>
       </div>
     </div>
   </section>
