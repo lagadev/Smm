@@ -19,7 +19,6 @@ function escapeHTML(s){ if(!s) return ''; return String(s).replace(/&/g,'&amp;')
 function money(n){ return (Number(n)||0).toFixed(2); }
 // Wallet balance always shows a full 8 decimals, e.g. 8.16583030
 function formatBalance(n){ return (Number(n) || 0).toFixed(8); }
-function formatOrderId(id){ return String(60000000 + Number(id)); }
 function safeAlert(msg){ if(tg && tg.showAlert){ tg.showAlert(msg); } else { alert(msg); } }
 function haptic(type){ try{ tg && tg.HapticFeedback && tg.HapticFeedback.notificationOccurred(type); }catch(e){} }
 function safeTgOpen(link){ if (!link) return; if (tg && tg.openTelegramLink) tg.openTelegramLink(link); else window.open(link, '_blank'); }
@@ -90,7 +89,21 @@ async function loadSettings() {
 
   el('ads-earning-card').classList.toggle('hidden', !settings.ads_earning_enabled);
   el('ads-disabled-card').classList.toggle('hidden', !!settings.ads_earning_enabled);
-  if (settings.ads_earning_enabled) loadMonetagSDK(settings.monetag_zone_id);
+  if (settings.ads_earning_enabled) {
+    if (settings.adsgram_enabled && settings.adsgram_block_id) loadAdsgramSDK();
+    if (settings.monetag_enabled && settings.monetag_zone_id) loadMonetagSDK(settings.monetag_zone_id);
+  }
+}
+
+let adsgramController = null;
+function loadAdsgramSDK(){
+  const script = document.createElement('script');
+  script.src = 'https://sad.adsgram.ai/js/sad.min.js';
+  script.async = true;
+  script.onload = () => {
+    try{ adsgramController = window.Adsgram.init({ blockId: state.settings.adsgram_block_id }); }catch(e){}
+  };
+  document.body.appendChild(script);
 }
 
 function loadMonetagSDK(zoneId){
@@ -157,7 +170,11 @@ async function runForceJoinGate() {
 }
 
 // ---------------- Home ----------------
-function updateBalanceUI(){ el('total-balance').textContent = formatBalance(state.user.balance); }
+function updateBalanceUI(){
+  const formatted = formatBalance(state.user.balance);
+  el('total-balance').textContent = formatted;
+  document.querySelectorAll('.total-balance-mirror').forEach(n => n.textContent = formatted);
+}
 
 async function loadUserStats(){
   try{
@@ -308,7 +325,7 @@ async function confirmOrder(){
     updateBalanceUI();
     loadUserStats();
     haptic('success');
-    safeAlert(`Order #${formatOrderId(order.id)} placed! ${state.settings.currency_symbol}${money(order.charge)} deducted from your wallet.`);
+    safeAlert(`Order #${order.id} placed! ${state.settings.currency_symbol}${money(order.charge)} deducted from your wallet.`);
     clearOrderFields();
     el('service-detail-card').classList.add('hidden');
     el('service-select').value = '';
@@ -325,8 +342,6 @@ async function confirmOrder(){
 
 // ---------------- Add funds (watch ad) ----------------
 async function watchAd(){
-  const zoneId = state.settings.monetag_zone_id;
-  const adFn = zoneId ? window[`show_${zoneId}`] : null;
   el('ad-loader-overlay').style.display = 'flex';
 
   const finish = async () => {
@@ -344,11 +359,53 @@ async function watchAd(){
       el('ad-loader-overlay').style.display = 'none';
     }
   };
+  const fail = (msg) => {
+    el('ad-loader-overlay').style.display = 'none';
+    safeAlert(msg || 'Ad could not be loaded. Please try again.');
+  };
 
-  if (typeof adFn === 'function'){
-    adFn().then(finish).catch(() => { el('ad-loader-overlay').style.display = 'none'; safeAlert('Ad could not be loaded. Please try again.'); });
+  // Try AdsGram first, then Monetag, then (in dev/preview only) simulate a completed ad.
+  if (state.settings.adsgram_enabled && adsgramController) {
+    adsgramController.show().then(finish).catch(() => fail());
+    return;
+  }
+  const zoneId = state.settings.monetag_enabled ? state.settings.monetag_zone_id : null;
+  const monetagFn = zoneId ? window[`show_${zoneId}`] : null;
+  if (typeof monetagFn === 'function') {
+    monetagFn().then(finish).catch(() => fail());
+    return;
+  }
+  if (!state.settings.adsgram_enabled && !state.settings.monetag_enabled) {
+    setTimeout(finish, 1200); // dev/preview fallback when no ad network is configured yet
   } else {
-    setTimeout(finish, 1200); // dev/preview fallback when no ad zone configured
+    fail('Ad network is still loading — please try again in a moment.');
+  }
+}
+
+// ---------------- Promo code ----------------
+async function applyPromoCode(){
+  const input = el('promo-code-input');
+  const code = input.value.trim();
+  if (!code) return;
+  const btn = el('apply-promo-button');
+  btn.disabled = true;
+  btn.querySelector('.button-text').classList.add('hidden');
+  btn.querySelector('.spinner').classList.remove('hidden');
+  try{
+    const res = await api('/api/promo/redeem', { method: 'POST', body: JSON.stringify({ telegram_id: state.user.telegram_id, code }) });
+    state.user.balance = res.balance;
+    updateBalanceUI();
+    loadUserStats();
+    haptic('success');
+    safeAlert(`+${state.settings.currency_symbol}${money(res.reward)} added! Promo code applied successfully.`);
+    input.value = '';
+  }catch(e){
+    haptic('error');
+    safeAlert(e.message);
+  }finally{
+    btn.disabled = false;
+    btn.querySelector('.button-text').classList.remove('hidden');
+    btn.querySelector('.spinner').classList.add('hidden');
   }
 }
 
@@ -372,7 +429,7 @@ async function renderOrdersHistory(){
       <div class="history-item">
         <div class="history-details">
           <span class="name">#${o.service_public_id || '—'} ${escapeHTML(o.service_name)}</span>
-          <span class="meta">Order #${formatOrderId(o.id)} · ${new Date(o.created_at).toLocaleDateString()} · Qty ${o.quantity.toLocaleString()}</span>
+          <span class="meta">Order #${o.id} · ${new Date(o.created_at).toLocaleDateString()} · Qty ${o.quantity.toLocaleString()}</span>
           <span class="meta" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px;">${escapeHTML(o.link)}</span>
         </div>
         <div class="history-amount">
@@ -473,6 +530,7 @@ async function bootApp(){
   el('regen-token-btn').addEventListener('click', regenerateToken);
   el('contact-admin-fund-button').addEventListener('click', () => safeTgOpen(state.settings.support_link));
   el('api-docs-button').addEventListener('click', () => safeExternalOpen(window.location.origin + '/docs.html'));
+  el('apply-promo-button').addEventListener('click', applyPromoCode);
 
   safeTgAction();
 
