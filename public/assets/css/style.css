@@ -15,10 +15,10 @@
   --text-dim:#6B7280;
   --text-faint:#9CA3AF;
 
-  --primary:#3556F5;
-  --primary-dim:#2540C4;
-  --primary-rgb:53,86,245;
-  --primary-tint:rgba(53,86,245,.08);
+  --primary:#0D6EFD;
+  --primary-dim:#0B5ED9;
+  --primary-rgb:13,110,253;
+  --primary-tint:rgba(13,110,253,.08);
   --primary-text:#FFFFFF;
 
   --danger:#DC2626;
@@ -222,19 +222,41 @@ select.field{ appearance:none; -webkit-appearance:none; background-image:url("da
 .field-hint{ font-size:12px; color:var(--text-dim); margin-top:6px; }
 .field-readonly{ background:var(--surface-2); color:var(--text-dim); cursor:default; }
 
-.btn-submit{ background:linear-gradient(135deg, #7C3AED, #4F46E5); color:#fff; font-size:16px; padding:15px; margin-top:6px; box-shadow:0 10px 24px rgba(124,58,237,.28); }
+.btn-submit{ background:linear-gradient(135deg, #2B8CFF, #0D6EFD); color:#fff; font-size:16px; padding:15px; margin-top:6px; box-shadow:0 10px 24px rgba(13,110,253,.30); }
 .btn-submit:hover:not(:disabled){ opacity:.94; }
 .btn-submit:disabled{ background:var(--surface-3); color:var(--text-faint); box-shadow:none; }
 
 /* ---------- Service detail card (provider-style gradient) ---------- */
 .service-detail-card{ border-radius:var(--radius-lg); overflow:hidden; margin-bottom:16px; border:1px solid var(--border); animation:fadeUp .3s ease-out; }
-.sdc-header{ background:linear-gradient(135deg, #7C3AED, #4338CA); padding:22px 20px; position:relative; }
+.sdc-header{ background:linear-gradient(135deg, #2B8CFF, #0B5ED9); padding:22px 20px; position:relative; }
 .sdc-badge{ display:inline-block; background:#F59E0B; color:#3B1D00; font-family:var(--font-display); font-weight:800; font-size:13px; padding:6px 16px; border-radius:999px; margin-bottom:12px; }
 .sdc-title{ color:#fff; font-family:var(--font-display); font-weight:700; font-size:15px; line-height:1.5; }
 .sdc-body{ background:var(--surface); padding:18px 20px; }
 .sdc-title-sm{ font-weight:700; font-size:13.5px; margin-bottom:10px; }
 .sdc-row{ display:flex; gap:8px; font-size:13px; padding:5px 0; color:var(--text-dim); }
-.sdc-row strong{ color:var(--text); font-weight:600; }
+.sdc-row strong{ color:var(--text); font-weight:600; white-space:pre-wrap; word-break:break-word; }
+
+/* ---------- Small balance card variant (Funds / Profile) ---------- */
+.balance-card-sm{ padding:18px 20px; margin-bottom:16px; text-align:center; }
+.balance-card-sm .balance-amount{ font-size:26px; margin-top:4px; }
+
+/* ---------- Round "Watch Ad" button ---------- */
+.watch-ad-circle-wrap{ display:flex; justify-content:center; padding:6px 0 4px; }
+.watch-ad-circle{
+  width:120px; height:120px; border-radius:50%; border:none; cursor:pointer;
+  background:linear-gradient(135deg, #2B8CFF, #0D6EFD); color:#fff; font-size:34px;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 16px 34px rgba(13,110,253,.35);
+  transition:transform .15s ease;
+}
+.watch-ad-circle:hover{ transform:scale(1.04); }
+.watch-ad-circle:active{ transform:scale(.97); }
+.watch-ad-circle.pulsing{ animation:pulseRing 2s infinite; }
+.watch-ad-circle i{ margin-left:4px; }
+
+/* ---------- Promo code ---------- */
+.promo-input-row{ display:flex; gap:10px; }
+.promo-input-row .field{ flex:1; }
 
 /* ---------- Profile ---------- */
 #profile-pic-lg{ width:52px; height:52px; border-radius:50%; background:var(--surface-2); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-weight:700; overflow:hidden; color:var(--primary); font-size:20px; flex:0 0 auto; }
