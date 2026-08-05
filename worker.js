@@ -1,5 +1,5 @@
 /**
- * TeleGrow — SMM Panel Mini App backend (v4)
+ * TeleGrow — SMM Panel Mini App backend (v5)
  * Cloudflare Worker + D1 + Cron Triggers
  *
  * Mini App routes:
@@ -16,6 +16,7 @@
  *   GET  /api/orders?telegram_id=
  *   GET  /api/transactions?telegram_id=
  *   POST /api/ad-reward                   { telegram_id }
+ *   POST /api/promo/redeem                { telegram_id, code }
  *   GET  /api/force-join
  *   POST /api/verify-join                 { telegram_id }
  *
@@ -29,13 +30,17 @@
  *   POST /api/admin/login
  *   GET  /api/admin/stats
  *   GET/POST/PUT/DELETE /api/admin/categories(/:id)
- *   GET/POST/PUT/DELETE /api/admin/services(/:id)
+ *   GET/POST/PUT/DELETE /api/admin/services(/:id)   (public_id is admin-editable)
  *   GET/PUT /api/admin/orders(/:id)   POST /api/admin/orders/:id/sync
  *   GET/PUT /api/admin/users(/:id)    GET /api/admin/users/:id/detail
  *   GET/POST/PUT/DELETE /api/admin/force-join(/:id)
+ *   GET/POST/PUT/DELETE /api/admin/promo(/:id)
  *   GET/PUT /api/admin/settings
  *   POST /api/admin/telegram/set-webhook
  *   POST /api/admin/broadcast
+ *
+ * Order log: on every successful order (Mini App or reseller API), if
+ * order_log_enabled=1, a formatted HTML log is posted to order_log_channel.
  *
  * Cron (wrangler.jsonc triggers.crons):
  *   "*\/5 * * * *"  -> sync Processing orders + pending refills from the provider
@@ -192,6 +197,7 @@ async function createOrder(db, user, servicePublicId, link, quantity, source) {
   if (charge <= 0) return { error: "Invalid charge calculated" };
   if (user.balance < charge) return { error: "Insufficient balance" };
 
+  const beforeBalance = user.balance;
   await db.prepare("UPDATE users SET balance = balance - ? WHERE id = ?").bind(charge, user.id).run();
   const refillAvailable = service.refill_days > 0 ? 1 : 0;
   const insert = await db.prepare(
@@ -211,7 +217,7 @@ async function createOrder(db, user, servicePublicId, link, quantity, source) {
 
   const order = await db.prepare("SELECT * FROM orders WHERE id = ?").bind(orderId).first();
   const updatedUser = await db.prepare("SELECT * FROM users WHERE id = ?").bind(user.id).first();
-  return { order, balance: updatedUser.balance };
+  return { order, balance: updatedUser.balance, service, beforeBalance, afterBalance: updatedUser.balance, telegramId: user.telegram_id, username: updatedUser.username };
 }
 
 // ---------- Force-join verification ----------
@@ -227,25 +233,32 @@ async function checkChannelMembership(botToken, username, telegramId) {
 }
 
 // ---------- Telegram bot helpers ----------
-async function tgSendMessage(botToken, chatId, text, buttonText, buttonUrl) {
+function inlineButton(buttonText, buttonUrl, asUrlButton) {
+  if (!buttonText || !buttonUrl) return null;
+  return asUrlButton ? { text: buttonText, url: buttonUrl } : { text: buttonText, web_app: { url: buttonUrl } };
+}
+async function tgSendMessage(botToken, chatId, text, buttonText, buttonUrl, asUrlButton) {
   const body = { chat_id: chatId, text, parse_mode: "HTML" };
-  if (buttonText && buttonUrl) body.reply_markup = { inline_keyboard: [[{ text: buttonText, web_app: { url: buttonUrl } }]] };
+  const btn = inlineButton(buttonText, buttonUrl, asUrlButton);
+  if (btn) body.reply_markup = { inline_keyboard: [[btn]] };
   const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
   return res.json();
 }
-async function tgSendPhoto(botToken, chatId, photoUrl, caption, buttonText, buttonUrl) {
-  const body = { chat_id: chatId, photo: photoUrl, caption, parse_mode: "HTML" };
-  if (buttonText && buttonUrl) body.reply_markup = { inline_keyboard: [[{ text: buttonText, web_app: { url: buttonUrl } }]] };
+async function tgSendPhoto(botToken, chatId, photoUrl, caption, buttonText, buttonUrl, asUrlButton) {
+  const body = { chat_id: chatId, photo: photoUrl, parse_mode: "HTML" };
+  if (caption) body.caption = caption;
+  const btn = inlineButton(buttonText, buttonUrl, asUrlButton);
+  if (btn) body.reply_markup = { inline_keyboard: [[btn]] };
   const res = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
   return res.json();
 }
 async function sendToUser(botToken, chatId, text, imageUrl, buttonText, buttonUrl) {
-  if (imageUrl) return tgSendPhoto(botToken, chatId, imageUrl, text, buttonText, buttonUrl);
-  return tgSendMessage(botToken, chatId, text, buttonText, buttonUrl);
+  if (imageUrl) return tgSendPhoto(botToken, chatId, imageUrl, text, buttonText, buttonUrl, false);
+  return tgSendMessage(botToken, chatId, text, buttonText, buttonUrl, false);
 }
 
 async function broadcastToAllUsers(db, botToken, appUrl, { text, imageUrl, buttonText, buttonUrl }) {
@@ -259,6 +272,77 @@ async function broadcastToAllUsers(db, botToken, appUrl, { text, imageUrl, butto
     } catch { failed++; }
   }
   await setSetting(db, "broadcast_last_result", JSON.stringify({ sent, failed, total: users.length, at: new Date().toISOString() }));
+}
+
+// ---------- Per-order channel log ----------
+function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+async function sendOrderLog(db, env, result) {
+  const enabled = (await getSetting(db, "order_log_enabled")) === "1";
+  if (!enabled) return;
+  const channel = await getSetting(db, "order_log_channel");
+  const botToken = (await getSetting(db, "bot_token")) || env.BOT_TOKEN;
+  if (!channel || !botToken) return;
+
+  const { order, service, beforeBalance, afterBalance, telegramId, username } = result;
+  const providerName = service.provider_id ? ((await getSetting(db, "provider_display_name")) || "SMMGen") : "Manual";
+  const now = new Date();
+
+  const caption =
+`<blockquote><b>🚀 TELEGROW • ORDER LOG</b></blockquote>
+
+<b>👤 Customer</b>
+├ <b>Username:</b> @${esc(username || "N/A")}
+├ <b>User ID:</b> <code>${esc(telegramId)}</code>
+└ <b>Balance:</b> <code>${afterBalance.toFixed(8)}</code> Coins
+
+<b>📦 Order Details</b>
+├ <b>Order ID:</b> <code>#${order.id}</code>
+├ <b>Service:</b> ${esc(service.name)}
+├ <b>Service ID:</b> <code>${service.public_id}</code>
+├ <b>Quantity:</b> ${order.quantity}
+├ <b>Charge:</b> <code>${order.charge.toFixed(8)}</code> Coins
+├ <b>Provider:</b> ${esc(providerName)}
+└ <b>Status:</b> ✅ <b>${esc(order.status)}</b>
+
+<b>🎯 Target</b>
+└ <code>${esc(order.link)}</code>
+
+<b>📊 Progress</b>
+├ <b>Start Count:</b> -
+├ <b>Current:</b> -
+├ <b>Remains:</b> -
+└ <b>Refill:</b> ${service.refill_days > 0 ? service.refill_days + " Days" : "No Refill"}
+
+<b>💳 Payment</b>
+├ <b>Method:</b> Coins Wallet
+├ <b>Before:</b> <code>${beforeBalance.toFixed(8)}</code>
+└ <b>After:</b> <code>${afterBalance.toFixed(8)}</code>
+
+<b>🕒 Timeline</b>
+├ <b>Date:</b> ${now.toISOString().slice(0, 10)}
+├ <b>Time:</b> ${now.toISOString().slice(11, 19)} UTC
+└ <b>Completed:</b> -
+
+━━━━━━━━━━━━━━━━━━━━━━
+🤖 <b>Powered by TeleGrow</b>
+⚡ Fast • Secure • Reliable
+━━━━━━━━━━━━━━━━━━━━━━`;
+
+  const imageUrl = await getSetting(db, "order_log_image_url");
+  const buttonText = (await getSetting(db, "order_log_button_text")) || "🎯 Grab Your Chance";
+  const botUsername = await getSetting(db, "bot_username");
+  const appUrl = botUsername ? `https://t.me/${botUsername}?startapp=log` : (env.APP_URL || "");
+  try {
+    if (imageUrl && caption.length <= 1024) {
+      await tgSendPhoto(botToken, channel, imageUrl, caption, buttonText, appUrl, true);
+    } else if (imageUrl) {
+      // Telegram photo captions are capped at 1024 chars — send the image first, then the full log as text.
+      await tgSendPhoto(botToken, channel, imageUrl, null, null, null, true);
+      await tgSendMessage(botToken, channel, caption, buttonText, appUrl, true);
+    } else {
+      await tgSendMessage(botToken, channel, caption, buttonText, appUrl, true);
+    }
+  } catch { /* best-effort — never block the order on a logging failure */ }
 }
 
 // ================= ROUTER =================
@@ -355,7 +439,8 @@ async function handleApi(request, env, url, pathname, ctx) {
         site_name: s.site_name, currency: s.currency, currency_symbol: s.currency_symbol,
         ads_earning_enabled: s.ads_earning_enabled === "1",
         ad_reward: s.ad_reward, daily_ad_limit: s.daily_ad_limit, cooldown_minutes: s.cooldown_minutes,
-        monetag_zone_id: s.monetag_zone_id,
+        adsgram_enabled: s.adsgram_enabled === "1", adsgram_block_id: s.adsgram_block_id,
+        monetag_enabled: s.monetag_enabled === "1", monetag_zone_id: s.monetag_zone_id,
         bot_username: s.bot_username, channel_link: s.channel_link, support_link: s.support_link,
         force_join_enabled: s.force_join_enabled === "1",
       },
@@ -439,6 +524,7 @@ async function handleApi(request, env, url, pathname, ctx) {
     if (user.banned) return err("Account suspended", 403);
     const result = await createOrder(db, user, servicePublicId, link, quantity, "app");
     if (result.error) return err(result.error, result.error === "Insufficient balance" ? 402 : 400);
+    ctx.waitUntil(sendOrderLog(db, env, result));
     return json({ ok: true, order: result.order, balance: result.balance });
   }
 
@@ -499,6 +585,31 @@ async function handleApi(request, env, url, pathname, ctx) {
     return json({ ok: true, balance: updated.balance, watched_today: count + 1, daily_limit: dailyLimit, reward });
   }
 
+  // ---------- Promo codes ----------
+  if (pathname === "/api/promo/redeem" && method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    if (!body.telegram_id || !body.code) return err("telegram_id and code required");
+    const user = await db.prepare("SELECT * FROM users WHERE telegram_id = ?").bind(body.telegram_id).first();
+    if (!user) return err("User not found", 404);
+    if (user.banned) return err("Account suspended", 403);
+
+    const promo = await db.prepare("SELECT * FROM promo_codes WHERE code = ? COLLATE NOCASE AND status = 'active'").bind(body.code.trim()).first();
+    if (!promo) return err("Invalid or expired promo code", 404);
+    if (promo.claimed_count >= promo.max_claims) return err("This promo code has reached its claim limit", 410);
+
+    const already = await db.prepare("SELECT id FROM promo_claims WHERE promo_id = ? AND user_id = ?").bind(promo.id, user.id).first();
+    if (already) return err("You've already claimed this promo code", 409);
+
+    await db.prepare("INSERT INTO promo_claims (promo_id, user_id) VALUES (?, ?)").bind(promo.id, user.id).run();
+    await db.prepare("UPDATE promo_codes SET claimed_count = claimed_count + 1 WHERE id = ?").bind(promo.id).run();
+    await db.prepare("UPDATE users SET balance = balance + ? WHERE id = ?").bind(promo.reward, user.id).run();
+    await db.prepare("INSERT INTO transactions (user_id, type, amount, note) VALUES (?, 'promo', ?, ?)")
+      .bind(user.id, promo.reward, `Promo code ${promo.code}`).run();
+
+    const updated = await db.prepare("SELECT * FROM users WHERE id = ?").bind(user.id).first();
+    return json({ ok: true, reward: promo.reward, balance: updated.balance });
+  }
+
   // ---------- Force join ----------
   if (pathname === "/api/force-join" && method === "GET") {
     const enabled = (await getSetting(db, "force_join_enabled")) === "1";
@@ -527,7 +638,7 @@ async function handleApi(request, env, url, pathname, ctx) {
   }
 
   // ---------- Reseller / child API ----------
-  if (pathname === "/api/v2" && method === "POST") return handleResellerApi(db, request);
+  if (pathname === "/api/v2" && method === "POST") return handleResellerApi(db, env, request, ctx);
 
   // ---------- Telegram webhook ----------
   if (pathname === "/api/telegram/webhook" && method === "POST") {
@@ -574,7 +685,7 @@ async function handleTelegramWebhook(db, env, request) {
 }
 
 // ---------- Reseller API ----------
-async function handleResellerApi(db, request) {
+async function handleResellerApi(db, env, request, ctx) {
   const contentType = request.headers.get("content-type") || "";
   let params = {};
   try {
@@ -608,6 +719,7 @@ async function handleResellerApi(db, request) {
   if (action === "add") {
     const result = await createOrder(db, user, params.service, params.link, params.quantity, "api");
     if (result.error) return json({ error: result.error });
+    ctx.waitUntil(sendOrderLog(db, env, result));
     return json({ order: result.order.id });
   }
 
@@ -748,7 +860,15 @@ async function handleAdmin(db, env, method, pathname, request, url, ctx) {
   if (pathname === "/api/admin/services" && method === "POST") {
     const b = await request.json().catch(() => ({}));
     if (!b.name || !b.category_id || !b.rate) return err("name, category_id, rate required");
-    const publicId = await genPublicId(db);
+    let publicId;
+    if (b.public_id) {
+      publicId = parseInt(b.public_id, 10);
+      if (!Number.isFinite(publicId)) return err("Public ID must be a number");
+      const exists = await db.prepare("SELECT id FROM services WHERE public_id = ?").bind(publicId).first();
+      if (exists) return err(`Public ID ${publicId} is already used by another service`);
+    } else {
+      publicId = await genPublicId(db);
+    }
     const res = await db.prepare(
       `INSERT INTO services (public_id, category_id, name, rate, min_qty, max_qty, description, avg_time, link_type, start_type, speed_info, refill_days, provider_id, status, sort_order)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -762,6 +882,13 @@ async function handleAdmin(db, env, method, pathname, request, url, ctx) {
   m = pathname.match(/^\/api\/admin\/services\/(\d+)$/);
   if (m && method === "PUT") {
     const b = await request.json().catch(() => ({}));
+    if (b.public_id) {
+      const publicId = parseInt(b.public_id, 10);
+      if (!Number.isFinite(publicId)) return err("Public ID must be a number");
+      const exists = await db.prepare("SELECT id FROM services WHERE public_id = ? AND id != ?").bind(publicId, m[1]).first();
+      if (exists) return err(`Public ID ${publicId} is already used by another service`);
+      await db.prepare("UPDATE services SET public_id = ? WHERE id = ?").bind(publicId, m[1]).run();
+    }
     await db.prepare(
       `UPDATE services SET category_id=?, name=?, rate=?, min_qty=?, max_qty=?, description=?, avg_time=?, link_type=?, start_type=?, speed_info=?, refill_days=?, provider_id=?, status=?, sort_order=? WHERE id=?`
     ).bind(
@@ -864,6 +991,29 @@ async function handleAdmin(db, env, method, pathname, request, url, ctx) {
     return json({ ok: true });
   }
   if (m && method === "DELETE") { await db.prepare("DELETE FROM force_join_channels WHERE id = ?").bind(m[1]).run(); return json({ ok: true }); }
+
+  // ---- promo codes ----
+  if (pathname === "/api/admin/promo" && method === "GET") {
+    const { results } = await db.prepare("SELECT * FROM promo_codes ORDER BY created_at DESC").all();
+    return json({ ok: true, codes: results });
+  }
+  if (pathname === "/api/admin/promo" && method === "POST") {
+    const b = await request.json().catch(() => ({}));
+    if (!b.code || !b.reward) return err("code and reward required");
+    try {
+      const res = await db.prepare("INSERT INTO promo_codes (code, reward, max_claims, status) VALUES (?, ?, ?, ?)")
+        .bind(b.code.trim().toUpperCase(), b.reward, b.max_claims || 100, b.status || "active").run();
+      return json({ ok: true, id: res.meta.last_row_id });
+    } catch (e) { return err("That code already exists"); }
+  }
+  m = pathname.match(/^\/api\/admin\/promo\/(\d+)$/);
+  if (m && method === "PUT") {
+    const b = await request.json().catch(() => ({}));
+    await db.prepare("UPDATE promo_codes SET code=?, reward=?, max_claims=?, status=? WHERE id=?")
+      .bind(b.code.trim().toUpperCase(), b.reward, b.max_claims || 100, b.status || "active", m[1]).run();
+    return json({ ok: true });
+  }
+  if (m && method === "DELETE") { await db.prepare("DELETE FROM promo_codes WHERE id = ?").bind(m[1]).run(); return json({ ok: true }); }
 
   // ---- settings ----
   if (pathname === "/api/admin/settings" && method === "GET") return json({ ok: true, settings: await getSettings(db) });
