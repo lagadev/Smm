@@ -9,7 +9,7 @@ function money(n){ return (Number(n)||0).toFixed(2); }
 function money8(n){ return (Number(n)||0).toFixed(8); }
 
 let ADMIN_PASSWORD = sessionStorage.getItem('tg_admin_pw') || '';
-let cache = { categories: [], services: [], settings: {} };
+let cache = { categories: [], services: [], settings: {}, promo: [] };
 
 async function api(path, opts = {}) {
   const headers = { "Content-Type": "application/json", "X-Admin-Password": ADMIN_PASSWORD, ...(opts.headers || {}) };
@@ -62,6 +62,7 @@ const TAB_TITLES = {
   users: ['Users', 'Manage user balances and access'],
   forcejoin: ['Force Join', 'Channels users must join before using the app'],
   broadcast: ['Broadcast', 'Message all users, plus a daily auto-reminder'],
+  promo: ['Promo Codes', 'Codes users can redeem for a balance top-up'],
   settings: ['Settings', 'Configure bot, ads, provider and rewards'],
 };
 
@@ -78,6 +79,7 @@ function switchTab(tab){
   if (tab === 'users') loadUsers();
   if (tab === 'forcejoin') loadForceJoin();
   if (tab === 'broadcast') loadBroadcastTab();
+  if (tab === 'promo') loadPromoCodes();
   if (tab === 'settings') loadSettings();
 }
 
@@ -197,7 +199,7 @@ async function loadServices(){
 function openAddService(){
   el('service-modal-title').textContent = 'Add Service';
   el('service-id').value = '';
-  el('service-public-id-row').classList.add('hidden');
+  el('service-public-id').value = '';
   el('service-name').value = '';
   el('service-rate').value = '';
   el('service-min').value = 100;
@@ -217,7 +219,6 @@ function editService(id){
   if (!s) return;
   el('service-modal-title').textContent = 'Edit Service';
   el('service-id').value = s.id;
-  el('service-public-id-row').classList.remove('hidden');
   el('service-public-id').value = s.public_id;
   el('service-category').value = s.category_id;
   el('service-name').value = s.name;
@@ -237,6 +238,7 @@ function editService(id){
 async function saveService(){
   const id = el('service-id').value;
   const payload = {
+    public_id: el('service-public-id').value.trim() || null,
     category_id: parseInt(el('service-category').value, 10),
     name: el('service-name').value.trim(),
     rate: parseFloat(el('service-rate').value),
@@ -247,7 +249,7 @@ async function saveService(){
     speed_info: el('service-speed').value.trim() || null,
     refill_days: parseInt(el('service-refilldays').value, 10) || 0,
     link_type: el('service-linktype').value.trim() || null,
-    description: el('service-desc').value.trim() || null,
+    description: el('service-desc').value || null,
     provider_id: el('service-provider').value.trim() || null,
     status: el('service-status').value,
   };
@@ -273,7 +275,7 @@ async function loadOrders(){
   const tbody = document.querySelector('#orders-table tbody');
   tbody.innerHTML = orders.map(o => `
     <tr>
-      <td>#${60000000 + o.id}</td>
+      <td>#${o.id}</td>
       <td>${escapeHTML(o.first_name)}<br><span style="color:var(--text-faint);font-size:11.5px;">${escapeHTML(o.telegram_id)}</span></td>
       <td>${escapeHTML(o.service_name)}</td>
       <td><a href="${escapeHTML(o.link)}" target="_blank" style="color:var(--primary);">Open link</a></td>
@@ -347,7 +349,7 @@ async function openUserDetail(userId){
       </div>
       <h3 class="card-title">Recent Orders</h3>
       <div class="table-wrap"><table class="admin-table"><thead><tr><th>ID</th><th>Service</th><th>Charge</th><th>Status</th><th>Date</th></tr></thead><tbody>
-        ${recentOrders.map(o => `<tr><td>#${60000000 + o.id}</td><td>${escapeHTML(o.service_name)}</td><td>$${money(o.charge)}</td><td>${escapeHTML(o.status)}</td><td>${new Date(o.created_at).toLocaleDateString()}</td></tr>`).join('') || `<tr><td colspan="5" style="text-align:center;color:var(--text-dim);">None</td></tr>`}
+        ${recentOrders.map(o => `<tr><td>#${o.id}</td><td>${escapeHTML(o.service_name)}</td><td>$${money(o.charge)}</td><td>${escapeHTML(o.status)}</td><td>${new Date(o.created_at).toLocaleDateString()}</td></tr>`).join('') || `<tr><td colspan="5" style="text-align:center;color:var(--text-dim);">None</td></tr>`}
       </tbody></table></div>
       <h3 class="card-title" style="margin-top:16px;">Recent Transactions</h3>
       <div class="table-wrap"><table class="admin-table"><thead><tr><th>Type</th><th>Amount</th><th>Note</th><th>Date</th></tr></thead><tbody>
@@ -456,9 +458,12 @@ async function loadSettings(){
 }
 async function saveSettings(){
   const keys = ['site_name','currency_symbol','bot_username','bot_token','channel_link','support_link',
-                'ads_earning_enabled','monetag_zone_id','ad_reward','daily_ad_limit','cooldown_minutes',
+                'ads_earning_enabled','ad_reward','daily_ad_limit','cooldown_minutes',
+                'adsgram_enabled','adsgram_block_id','monetag_enabled','monetag_zone_id',
                 'provider_auto_order','provider_api_url','provider_api_key','force_join_enabled',
-                'start_text','start_image_url','start_button_text','admin_password'];
+                'start_text','start_image_url','start_button_text',
+                'order_log_enabled','order_log_channel','order_log_image_url','order_log_button_text',
+                'admin_password'];
   const payload = {};
   keys.forEach(k => { const f = el('set-' + k); if (f) payload[k] = f.value; });
   try{
@@ -522,6 +527,66 @@ async function saveDailyBroadcast(){
   }catch(e){ alert(e.message); }
 }
 
+// ---------------- Promo Codes ----------------
+async function loadPromoCodes(){
+  const { codes } = await api('/api/admin/promo');
+  cache.promo = codes;
+  const tbody = document.querySelector('#promo-table tbody');
+  tbody.innerHTML = codes.map(c => `
+    <tr>
+      <td><code>${escapeHTML(c.code)}</code></td>
+      <td>$${money8(c.reward)}</td>
+      <td>${c.claimed_count} / ${c.max_claims}</td>
+      <td><span class="badge ${c.status === 'active' ? 'active' : 'inactive'}">${c.status}</span></td>
+      <td>${new Date(c.created_at).toLocaleDateString()}</td>
+      <td class="actions">
+        <button class="btn btn-sm btn-ghost" onclick="editPromo(${c.id})"><i class="fa-solid fa-pen"></i></button>
+        <button class="btn btn-sm btn-ghost" onclick="deletePromo(${c.id})" style="color:var(--danger);"><i class="fa-solid fa-trash"></i></button>
+      </td>
+    </tr>`).join('') || `<tr><td colspan="6" style="text-align:center;color:var(--text-dim);">No promo codes yet</td></tr>`;
+}
+function openAddPromo(){
+  el('promo-modal-title').textContent = 'Add Promo Code';
+  el('promo-id').value = '';
+  el('promo-code').value = '';
+  el('promo-reward').value = '';
+  el('promo-max-claims').value = 100;
+  el('promo-status').value = 'active';
+  showModal('promoModal');
+}
+function editPromo(id){
+  const c = cache.promo.find(x => x.id === id);
+  if (!c) return;
+  el('promo-modal-title').textContent = 'Edit Promo Code';
+  el('promo-id').value = c.id;
+  el('promo-code').value = c.code;
+  el('promo-reward').value = c.reward;
+  el('promo-max-claims').value = c.max_claims;
+  el('promo-status').value = c.status;
+  showModal('promoModal');
+}
+async function savePromo(){
+  const id = el('promo-id').value;
+  const payload = {
+    code: el('promo-code').value.trim().toUpperCase(),
+    reward: parseFloat(el('promo-reward').value),
+    max_claims: parseInt(el('promo-max-claims').value, 10) || 100,
+    status: el('promo-status').value,
+  };
+  if (!payload.code || !payload.reward) return alert('Code and reward are required');
+  try{
+    if (id) await api(`/api/admin/promo/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+    else await api('/api/admin/promo', { method: 'POST', body: JSON.stringify(payload) });
+    closeModal('promoModal');
+    loadPromoCodes();
+  }catch(e){ alert(e.message); }
+}
+async function deletePromo(id){
+  if (!confirm('Delete this promo code?')) return;
+  try{ await api(`/api/admin/promo/${id}`, { method: 'DELETE' }); loadPromoCodes(); }
+  catch(e){ alert(e.message); }
+}
+
 async function refreshAll(){ await loadDashboard(); }
 
 // ---------------- Wire up ----------------
@@ -540,6 +605,8 @@ document.addEventListener('DOMContentLoaded', () => {
   el('save-service-btn').addEventListener('click', saveService);
   el('add-fj-btn').addEventListener('click', openAddForceJoin);
   el('save-fj-btn').addEventListener('click', saveForceJoin);
+  el('add-promo-btn').addEventListener('click', openAddPromo);
+  el('save-promo-btn').addEventListener('click', savePromo);
   el('order-status-filter').addEventListener('change', loadOrders);
   el('user-search').addEventListener('input', debounce(loadUsers, 350));
   el('save-balance-btn').addEventListener('click', saveBalanceAdjust);
