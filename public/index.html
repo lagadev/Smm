@@ -7,7 +7,7 @@
 
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="assets/css/style.css">
+<link rel="stylesheet" href="assets/css/style.css?v=6">
 
 <script>
   (function(){
@@ -22,7 +22,7 @@
 <body>
 
 <div id="preloader">
-  <div class="preloader-mark">TG</div>
+  <div class="preloader-mark"><img src="assets/img/logo.svg" alt="TG" onerror="this.replaceWith(document.createTextNode('TG'))"></div>
   <div id="preloader-percentage">0%</div>
 </div>
 <div id="preloader-footer"><a href="#" id="preloader-channel-link" target="_blank">Powered by TeleGrow</a></div>
@@ -32,7 +32,7 @@
 <!-- ===== Force Join gate ===== -->
 <div id="force-join-gate" class="fj-gate hidden">
   <div class="fj-card">
-    <div class="brand-mark" style="margin:0 auto 14px;">TG</div>
+    <div class="brand-mark" style="margin:0 auto 14px;"><img src="assets/img/logo.svg" alt="TG" onerror="this.replaceWith(document.createTextNode('TG'))"></div>
     <h2 style="text-align:center;margin:0 0 4px;">Join to Continue</h2>
     <p class="card-sub" style="text-align:center;">Join the channel(s) below, then tap Verify.</p>
     <div id="fj-channel-list"></div>
@@ -49,7 +49,7 @@
   <!-- ===== Top bar ===== -->
   <div class="topbar">
     <div class="brand">
-      <div class="brand-mark">TG</div>
+      <div class="brand-mark"><img src="assets/img/logo.svg" alt="TG" onerror="this.replaceWith(document.createTextNode('TG'))"></div>
       <div class="brand-name">Tele<span>Grow</span></div>
     </div>
     <div id="profile-pic"><i class="fa-solid fa-user"></i></div>
@@ -234,12 +234,36 @@
     </button>
 
     <div class="card">
-      <div class="pill-row">
+      <div class="pill-row history-tabs-row">
         <button class="pill active" data-tab="orders" onclick="switchHistoryTab('orders')"><i class="fa-solid fa-bag-shopping"></i> Orders</button>
         <button class="pill" data-tab="funds" onclick="switchHistoryTab('funds')"><i class="fa-solid fa-coins"></i> Transactions</button>
       </div>
+
+      <div id="orders-history-controls">
+        <div class="search-box" style="margin-bottom:12px;">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <input type="text" id="order-search-input" placeholder="Search order ID or service">
+        </div>
+        <div class="pill-row" id="order-status-filter">
+          <button class="pill active" data-status="all">All</button>
+          <button class="pill" data-status="Pending">Pending</button>
+          <button class="pill" data-status="Processing">In Progress</button>
+          <button class="pill" data-status="Completed">Completed</button>
+        </div>
+      </div>
+
       <div id="orders-history"></div>
       <div id="funds-history" class="hidden"></div>
+    </div>
+  </section>
+
+  <!-- ===== DOCS VIEW (loaded in-app, no external browser) ===== -->
+  <section id="view-docs" class="view hidden">
+    <div class="docs-back-row">
+      <button class="btn btn-sm btn-ghost" onclick="switchView('profile')"><i class="fa-solid fa-arrow-left"></i> Back</button>
+    </div>
+    <div id="docs-content" class="card">
+      <div class="empty-state"><i class="fa-solid fa-spinner fa-spin"></i><p>Loading documentation…</p></div>
     </div>
   </section>
 
@@ -268,6 +292,6 @@
   </div>
 </div>
 
-<script src="assets/js/app.js"></script>
+<script src="assets/js/app.js?v=6"></script>
 </body>
 </html>
