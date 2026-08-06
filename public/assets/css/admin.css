@@ -54,7 +54,19 @@ table.admin-table td.actions{ display:flex; gap:6px; white-space:nowrap; }
 
 .modal-form .field{ margin-bottom:12px; }
 
-.tag-input{ display:flex; gap:8px; }
+/* ---- Order status pills (matches reference screenshot colors) ---- */
+.order-status-pill{ display:inline-block; font-size:11.5px; font-weight:700; padding:5px 12px; border-radius:999px; color:#fff; }
+.order-status-pill.status-pending{ background:#6B7280; }
+.order-status-pill.status-processing{ background:#7C3AED; }
+.order-status-pill.status-completed{ background:#16A34A; }
+.order-status-pill.status-partial{ background:#DB2777; }
+.order-status-pill.status-cancelled{ background:#DC2626; }
+
+/* ---- Quick Actions dropdown ---- */
+.qa-dropdown{ position:relative; display:inline-block; }
+.qa-menu{ position:absolute; right:0; top:calc(100% + 4px); background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:0 12px 28px rgba(0,0,0,.12); min-width:170px; z-index:50; overflow:hidden; }
+.qa-menu button, .qa-menu a{ display:flex; align-items:center; gap:8px; width:100%; padding:10px 14px; border:none; background:none; text-align:left; font-size:13px; color:var(--text); cursor:pointer; text-decoration:none; }
+.qa-menu button:hover, .qa-menu a:hover{ background:var(--surface-2); }
 .search-input{ max-width:260px; }
 
 @media (max-width: 860px){
