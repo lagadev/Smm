@@ -276,6 +276,14 @@ async function broadcastToAllUsers(db, botToken, appUrl, { text, imageUrl, butto
 
 // ---------- Per-order channel log ----------
 function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+function statusEmoji(status) {
+  const s = (status || "").toLowerCase();
+  if (s.includes("complet")) return "✅";
+  if (s.includes("partial")) return "🟡";
+  if (s.includes("cancel")) return "❌";
+  if (s.includes("process")) return "🟢";
+  return "⏳";
+}
 async function sendOrderLog(db, env, result) {
   const enabled = (await getSetting(db, "order_log_enabled")) === "1";
   if (!enabled) return;
@@ -284,49 +292,51 @@ async function sendOrderLog(db, env, result) {
   if (!channel || !botToken) return;
 
   const { order, service, beforeBalance, afterBalance, telegramId, username } = result;
-  const providerName = service.provider_id ? ((await getSetting(db, "provider_display_name")) || "SMMGen") : "Manual";
   const now = new Date();
+  const refillLine = service.refill_days > 0 ? `✅ ${service.refill_days} Days` : "❌ No Refill";
 
   const caption =
-`<blockquote><b>🚀 TELEGROW • ORDER LOG</b></blockquote>
+`╔══════════════════════════════╗
+🚀  T E L E G R O W • O R D E R  L O G
+╚══════════════════════════════╝
 
-<b>👤 Customer</b>
-├ <b>Username:</b> @${esc(username || "N/A")}
-├ <b>User ID:</b> <code>${esc(telegramId)}</code>
-└ <b>Balance:</b> <code>${afterBalance.toFixed(8)}</code> Coins
+👤 CUSTOMER INFORMATION
+┣ 👤 Username      ➜ @${esc(username || "N/A")}
+┣ 🆔 User ID       ➜ ${esc(telegramId)}
+┗ 💰 Balance       ➜ ${afterBalance.toFixed(8)} Coins
 
-<b>📦 Order Details</b>
-├ <b>Order ID:</b> <code>#${order.id}</code>
-├ <b>Service:</b> ${esc(service.name)}
-├ <b>Service ID:</b> <code>${service.public_id}</code>
-├ <b>Quantity:</b> ${order.quantity}
-├ <b>Charge:</b> <code>${order.charge.toFixed(8)}</code> Coins
-├ <b>Provider:</b> ${esc(providerName)}
-└ <b>Status:</b> ✅ <b>${esc(order.status)}</b>
+📦 ORDER DETAILS
+┣ 🧾 Order ID      ➜ #${order.id}
+┣ 🛒 Service       ➜ ${esc(service.name)}
+┣ 🔢 Service ID    ➜ ${service.public_id}
+┣ 📈 Quantity      ➜ ${order.quantity}
+┣ 💸 Charge        ➜ ${order.charge.toFixed(8)} Coins
+┗ 🟢 Status        ➜ ${statusEmoji(order.status)} ${esc(order.status)}
 
-<b>🎯 Target</b>
-└ <code>${esc(order.link)}</code>
+🎯 TARGET LINK
+┗ 🔗 ${esc(order.link)}
 
-<b>📊 Progress</b>
-├ <b>Start Count:</b> -
-├ <b>Current:</b> -
-├ <b>Remains:</b> -
-└ <b>Refill:</b> ${service.refill_days > 0 ? service.refill_days + " Days" : "No Refill"}
+📊 ORDER PROGRESS
+┣ 🚀 Start Count   ➜ -
+┣ 📈 Current       ➜ -
+┣ 📉 Remains       ➜ -
+┗ 🔄 Refill        ➜ ${refillLine}
 
-<b>💳 Payment</b>
-├ <b>Method:</b> Coins Wallet
-├ <b>Before:</b> <code>${beforeBalance.toFixed(8)}</code>
-└ <b>After:</b> <code>${afterBalance.toFixed(8)}</code>
+💳 PAYMENT DETAILS
+┣ 💎 Method        ➜ Coins Wallet
+┣ 📥 Before        ➜ ${beforeBalance.toFixed(8)} Coins
+┗ 📤 After         ➜ ${afterBalance.toFixed(8)} Coins
 
-<b>🕒 Timeline</b>
-├ <b>Date:</b> ${now.toISOString().slice(0, 10)}
-├ <b>Time:</b> ${now.toISOString().slice(11, 19)} UTC
-└ <b>Completed:</b> -
+🕒 TIMELINE
+┣ 📅 Date          ➜ ${now.toISOString().slice(0, 10)}
+┣ ⏰ Time          ➜ ${now.toISOString().slice(11, 19)} UTC
+┗ ✅ Completed     ➜ -
 
-━━━━━━━━━━━━━━━━━━━━━━
-🤖 <b>Powered by TeleGrow</b>
-⚡ Fast • Secure • Reliable
-━━━━━━━━━━━━━━━━━━━━━━`;
+╭──────────────────────────────╮
+🤖 Powered by TELEGROW
+⚡ Fast • 🔒 Secure • 🚀 Reliable
+💙 Thank you for choosing us!
+╰──────────────────────────────╯`;
 
   const imageUrl = await getSetting(db, "order_log_image_url");
   const buttonText = (await getSetting(db, "order_log_button_text")) || "🎯 Grab Your Chance";
@@ -381,6 +391,10 @@ async function syncProcessingOrders(db) {
         const entry = data[o.provider_order_id];
         if (!entry || entry.error) continue;
         const mapped = mapProviderStatus(entry.status);
+        const startCount = entry.start_count != null ? parseInt(entry.start_count, 10) : null;
+        const remains = entry.remains != null ? parseInt(entry.remains, 10) : null;
+        await db.prepare("UPDATE orders SET start_count = COALESCE(?, start_count), remains = COALESCE(?, remains) WHERE id = ?")
+          .bind(startCount, remains, o.id).run();
         if (mapped && mapped !== o.status) {
           if (mapped === "Cancelled" && o.status !== "Cancelled") await refundOrder(db, o, `Refund for cancelled order #${o.id}`);
           await db.prepare("UPDATE orders SET status = ? WHERE id = ?").bind(mapped, o.id).run();
@@ -441,6 +455,7 @@ async function handleApi(request, env, url, pathname, ctx) {
         ad_reward: s.ad_reward, daily_ad_limit: s.daily_ad_limit, cooldown_minutes: s.cooldown_minutes,
         adsgram_enabled: s.adsgram_enabled === "1", adsgram_block_id: s.adsgram_block_id,
         monetag_enabled: s.monetag_enabled === "1", monetag_zone_id: s.monetag_zone_id,
+        gigapub_enabled: s.gigapub_enabled === "1", gigapub_block_id: s.gigapub_block_id,
         bot_username: s.bot_username, channel_link: s.channel_link, support_link: s.support_link,
         force_join_enabled: s.force_join_enabled === "1",
       },
@@ -928,6 +943,10 @@ async function handleAdmin(db, env, method, pathname, request, url, ctx) {
     const data = await providerCall(db, "status", { order: order.provider_order_id });
     if (!data || data.error) return err((data && data.error) || "Provider sync failed");
     const mapped = mapProviderStatus(data.status);
+    const startCount = data.start_count != null ? parseInt(data.start_count, 10) : null;
+    const remains = data.remains != null ? parseInt(data.remains, 10) : null;
+    await db.prepare("UPDATE orders SET start_count = COALESCE(?, start_count), remains = COALESCE(?, remains) WHERE id = ?")
+      .bind(startCount, remains, m[1]).run();
     if (mapped && mapped !== order.status) {
       if (mapped === "Cancelled" && order.status !== "Cancelled") await refundOrder(db, order, `Refund for cancelled order #${order.id}`);
       await db.prepare("UPDATE orders SET status = ? WHERE id = ?").bind(mapped, m[1]).run();
