@@ -60,7 +60,8 @@ function switchView(name) {
   if (name === 'profile') { renderOrdersHistory(); renderTransactionsHistory(); }
 }
 function switchHistoryTab(tab) {
-  document.querySelectorAll('#view-profile .pill').forEach(p => p.classList.toggle('active', p.dataset.tab === tab));
+  document.querySelectorAll('.history-tabs-row .pill').forEach(p => p.classList.toggle('active', p.dataset.tab === tab));
+  el('orders-history-controls').classList.toggle('hidden', tab !== 'orders');
   el('orders-history').classList.toggle('hidden', tab !== 'orders');
   el('funds-history').classList.toggle('hidden', tab !== 'funds');
 }
@@ -83,8 +84,8 @@ async function loadSettings() {
   state.settings = settings;
   const sym = settings.currency_symbol || '$';
   document.querySelectorAll('#currency-symbol, .currency-symbol').forEach(n => n.textContent = sym);
-  el('ad-reward-label').textContent = `+${sym}${money(settings.ad_reward)} / ad`;
-  el('ad-reward-copy').textContent = `Watch a short ad to earn ${sym}${money(settings.ad_reward)} instantly. Up to ${settings.daily_ad_limit} ads per day.`;
+  el('ad-reward-label').textContent = `+${sym}${formatBalance(settings.ad_reward)} / ad`;
+  el('ad-reward-copy').textContent = `Watch a short ad to earn ${sym}${formatBalance(settings.ad_reward)} instantly. Up to ${settings.daily_ad_limit} ads per day.`;
   el('preloader-channel-link').href = settings.channel_link || '#';
 
   el('ads-earning-card').classList.toggle('hidden', !settings.ads_earning_enabled);
@@ -92,6 +93,7 @@ async function loadSettings() {
   if (settings.ads_earning_enabled) {
     if (settings.adsgram_enabled && settings.adsgram_block_id) loadAdsgramSDK();
     if (settings.monetag_enabled && settings.monetag_zone_id) loadMonetagSDK(settings.monetag_zone_id);
+    if (settings.gigapub_enabled && settings.gigapub_block_id) loadGigapubSDK(settings.gigapub_block_id);
   }
 }
 
@@ -103,6 +105,13 @@ function loadAdsgramSDK(){
   script.onload = () => {
     try{ adsgramController = window.Adsgram.init({ blockId: state.settings.adsgram_block_id }); }catch(e){}
   };
+  document.body.appendChild(script);
+}
+
+function loadGigapubSDK(blockId){
+  const script = document.createElement('script');
+  script.src = `https://ad.gigapub.tech/script?id=${encodeURIComponent(blockId)}`;
+  script.async = true;
   document.body.appendChild(script);
 }
 
@@ -181,8 +190,8 @@ async function loadUserStats(){
     const { stats } = await api(`/api/user/stats?telegram_id=${state.user.telegram_id}`);
     const sym = state.settings.currency_symbol || '$';
     el('stat-orders').textContent = stats.total_orders;
-    el('stat-spent').textContent = sym + money(stats.total_spent);
-    el('stat-earned').textContent = sym + money(stats.total_earned);
+    el('stat-spent').textContent = sym + formatBalance(stats.total_spent);
+    el('stat-earned').textContent = sym + formatBalance(stats.total_earned);
   }catch(e){}
 }
 
@@ -227,7 +236,7 @@ function renderServiceOptions(services){
   const sel = el('service-select');
   const sym = state.settings.currency_symbol || '$';
   sel.innerHTML = '<option value="">Select a service</option>' +
-    services.map(s => `<option value="${s.public_id}">${s.public_id} - ${escapeHTML(s.name)} ~ ${sym}${money(s.rate)}/1000</option>`).join('');
+    services.map(s => `<option value="${s.public_id}">${s.public_id} - ${escapeHTML(s.name)} ~ ${sym}${formatBalance(s.rate)}/1000</option>`).join('');
   state.selectedService = null;
   el('service-detail-card').classList.add('hidden');
   clearOrderFields();
@@ -264,7 +273,7 @@ function onServiceChange(){
 
     const refillText = s.refill_days > 0 ? `${s.refill_days} Days` : 'No Refill';
     el('sdc-id').textContent = '#' + s.public_id;
-    el('sdc-title').textContent = `${s.public_id} - ${s.name} ~ Max ${s.max_qty.toLocaleString()} ~ ${s.speed_info || ''} ~ ${s.start_type || ''} ~ ${refillText} ~ ${state.settings.currency_symbol}${money(s.rate)} per 1000`;
+    el('sdc-title').textContent = `${s.public_id} - ${s.name} ~ Max ${s.max_qty.toLocaleString()} ~ ${s.speed_info || ''} ~ ${s.start_type || ''} ~ ${refillText} ~ ${state.settings.currency_symbol}${formatBalance(s.rate)} per 1000`;
     el('sdc-link-type').textContent = s.link_type || '—';
     el('sdc-start').textContent = s.start_type || '—';
     el('sdc-speed').textContent = s.speed_info || '—';
@@ -325,7 +334,7 @@ async function confirmOrder(){
     updateBalanceUI();
     loadUserStats();
     haptic('success');
-    safeAlert(`Order #${order.id} placed! ${state.settings.currency_symbol}${money(order.charge)} deducted from your wallet.`);
+    safeAlert(`Order #${order.id} placed! ${state.settings.currency_symbol}${formatBalance(order.charge)} deducted from your wallet.`);
     clearOrderFields();
     el('service-detail-card').classList.add('hidden');
     el('service-select').value = '';
@@ -352,7 +361,7 @@ async function watchAd(){
       loadUserStats();
       el('ads-watched-label').textContent = `${res.watched_today} / ${res.daily_limit} today`;
       haptic('success');
-      safeAlert(`+${state.settings.currency_symbol}${money(res.reward)} added to your wallet!`);
+      safeAlert(`+${state.settings.currency_symbol}${formatBalance(res.reward)} added to your wallet!`);
     }catch(e){
       safeAlert(e.message);
     }finally{
@@ -364,7 +373,7 @@ async function watchAd(){
     safeAlert(msg || 'Ad could not be loaded. Please try again.');
   };
 
-  // Try AdsGram first, then Monetag, then (in dev/preview only) simulate a completed ad.
+  // Try AdsGram first, then Monetag, then GigaPub, then (dev/preview only) simulate a completed ad.
   if (state.settings.adsgram_enabled && adsgramController) {
     adsgramController.show().then(finish).catch(() => fail());
     return;
@@ -375,7 +384,11 @@ async function watchAd(){
     monetagFn().then(finish).catch(() => fail());
     return;
   }
-  if (!state.settings.adsgram_enabled && !state.settings.monetag_enabled) {
+  if (state.settings.gigapub_enabled && typeof window.showGiga === 'function') {
+    window.showGiga().then(finish).catch(() => fail());
+    return;
+  }
+  if (!state.settings.adsgram_enabled && !state.settings.monetag_enabled && !state.settings.gigapub_enabled) {
     setTimeout(finish, 1200); // dev/preview fallback when no ad network is configured yet
   } else {
     fail('Ad network is still loading — please try again in a moment.');
@@ -397,7 +410,7 @@ async function applyPromoCode(){
     updateBalanceUI();
     loadUserStats();
     haptic('success');
-    safeAlert(`+${state.settings.currency_symbol}${money(res.reward)} added! Promo code applied successfully.`);
+    safeAlert(`+${state.settings.currency_symbol}${formatBalance(res.reward)} added! Promo code applied successfully.`);
     input.value = '';
   }catch(e){
     haptic('error');
@@ -409,37 +422,77 @@ async function applyPromoCode(){
   }
 }
 
+// ---------------- In-app API docs ----------------
+let docsLoaded = false;
+async function openDocsInApp(){
+  switchView('docs');
+  if (docsLoaded) return;
+  try{
+    const res = await fetch('docs.html?v=6');
+    const html = await res.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    doc.querySelector('.docs-header')?.remove(); // we render our own Back button instead
+    el('docs-content').outerHTML = `<div id="docs-content">${doc.body.innerHTML}</div>`;
+    docsLoaded = true;
+    // Re-run the inline script that fills in the live API URL (module scripts in fetched HTML don't auto-execute).
+    const base = window.location.origin + '/api/v2';
+    const apiUrlEl = document.getElementById('api-url');
+    const phpUrlEl = document.getElementById('php-url');
+    if (apiUrlEl) apiUrlEl.textContent = base;
+    if (phpUrlEl) phpUrlEl.textContent = base;
+  }catch(e){
+    el('docs-content').innerHTML = `<p class="card-sub">Could not load documentation: ${escapeHTML(e.message)}</p>`;
+  }
+}
+
 // ---------------- History (Profile tab) ----------------
 function statusClass(s){ return (s || 'pending').toLowerCase(); }
 function emptyState(icon, text){ return `<div class="empty-state"><i class="fa-solid ${icon}"></i><p>${escapeHTML(text)}</p></div>`; }
 
+let allOrders = [];
+let orderStatusFilter = 'all';
+
 async function renderOrdersHistory(){
   try{
     const { orders } = await api(`/api/orders?telegram_id=${state.user.telegram_id}`);
-    const wrap = el('orders-history');
-    if (!orders.length){ wrap.innerHTML = emptyState('fa-bag-shopping', 'No orders yet'); return; }
-    wrap.innerHTML = orders.map(o => {
-      let refillHtml = '';
-      if (o.refill_available) {
-        if (o.refill_status === 'Pending') refillHtml = `<span class="status-badge processing" style="margin-top:6px;">Refill Pending</span>`;
-        else if (o.refill_status === 'Completed') refillHtml = `<span class="status-badge completed" style="margin-top:6px;">Refill Completed</span>`;
-        else if (o.status === 'Completed') refillHtml = `<button class="btn btn-sm btn-outline" style="margin-top:8px;" onclick="requestRefill(${o.id})">Refill</button>`;
-      }
-      return `
-      <div class="history-item">
-        <div class="history-details">
-          <span class="name">#${o.service_public_id || '—'} ${escapeHTML(o.service_name)}</span>
-          <span class="meta">Order #${o.id} · ${new Date(o.created_at).toLocaleDateString()} · Qty ${o.quantity.toLocaleString()}</span>
-          <span class="meta" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px;">${escapeHTML(o.link)}</span>
-        </div>
-        <div class="history-amount">
-          <div class="amt">${state.settings.currency_symbol}${money(o.charge)}</div>
-          <span class="status-badge ${statusClass(o.status)}">${escapeHTML(o.status)}</span>
-          ${refillHtml}
-        </div>
-      </div>`;
-    }).join('');
+    allOrders = orders;
+    renderFilteredOrders();
   }catch(e){}
+}
+
+function renderFilteredOrders(){
+  const q = (el('order-search-input').value || '').trim().toLowerCase();
+  let list = allOrders;
+  if (orderStatusFilter !== 'all') list = list.filter(o => o.status === orderStatusFilter);
+  if (q) list = list.filter(o => String(o.id).includes(q) || o.service_name.toLowerCase().includes(q) || String(o.service_public_id || '').includes(q));
+
+  const wrap = el('orders-history');
+  if (!list.length){ wrap.innerHTML = emptyState('fa-bag-shopping', allOrders.length ? 'No orders match your search' : 'No orders yet'); return; }
+
+  wrap.innerHTML = list.map(o => {
+    let refillHtml = '';
+    if (o.refill_available) {
+      if (o.refill_status === 'Pending') refillHtml = `<span class="status-badge processing">Refill Pending</span>`;
+      else if (o.refill_status === 'Completed') refillHtml = `<span class="status-badge completed">Refill Completed</span>`;
+      else if (o.status === 'Completed') refillHtml = `<button class="btn btn-sm btn-outline" onclick="requestRefill(${o.id})">Refill</button>`;
+    }
+    return `
+    <div class="order-card">
+      <div class="order-card-top">
+        <span class="order-card-service">#${o.service_public_id || '—'} ${escapeHTML(o.service_name)}</span>
+        <span class="status-badge ${statusClass(o.status)}">${escapeHTML(o.status)}</span>
+      </div>
+      <div class="order-card-grid">
+        <div class="ocg-field"><span class="ocg-label">Order ID</span><span class="ocg-value">#${o.id}</span></div>
+        <div class="ocg-field"><span class="ocg-label">Date</span><span class="ocg-value">${new Date(o.created_at).toLocaleDateString()}</span></div>
+        <div class="ocg-field"><span class="ocg-label">Quantity</span><span class="ocg-value">${o.quantity.toLocaleString()}</span></div>
+        <div class="ocg-field"><span class="ocg-label">Charge</span><span class="ocg-value">${state.settings.currency_symbol}${formatBalance(o.charge)}</span></div>
+      </div>
+      <div class="ocg-field ocg-link"><span class="ocg-label">Link</span><span class="ocg-value ocg-link-value">${escapeHTML(o.link)}</span></div>
+      ${refillHtml ? `<div class="order-card-actions">${refillHtml}</div>` : ''}
+    </div>`;
+  }).join('');
 }
 
 async function requestRefill(orderId){
@@ -467,7 +520,7 @@ async function renderTransactionsHistory(){
           <span class="meta">${new Date(t.created_at).toLocaleString()}${t.note ? ' · ' + escapeHTML(t.note) : ''}</span>
         </div>
         <div class="history-amount">
-          <div class="amt" style="color:${t.amount >= 0 ? 'var(--success)' : 'var(--danger)'};">${t.amount >= 0 ? '+' : ''}${state.settings.currency_symbol}${money(t.amount)}</div>
+          <div class="amt" style="color:${t.amount >= 0 ? 'var(--success)' : 'var(--danger)'};">${t.amount >= 0 ? '+' : ''}${state.settings.currency_symbol}${formatBalance(t.amount)}</div>
         </div>
       </div>`).join('');
   }catch(e){}
@@ -529,8 +582,17 @@ async function bootApp(){
   el('copy-token-btn').addEventListener('click', copyToken);
   el('regen-token-btn').addEventListener('click', regenerateToken);
   el('contact-admin-fund-button').addEventListener('click', () => safeTgOpen(state.settings.support_link));
-  el('api-docs-button').addEventListener('click', () => safeExternalOpen(window.location.origin + '/docs.html'));
+  el('api-docs-button').addEventListener('click', openDocsInApp);
   el('apply-promo-button').addEventListener('click', applyPromoCode);
+  el('order-search-input').addEventListener('input', renderFilteredOrders);
+  document.querySelectorAll('#order-status-filter .pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#order-status-filter .pill').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      orderStatusFilter = btn.dataset.status;
+      renderFilteredOrders();
+    });
+  });
 
   safeTgAction();
 
@@ -540,7 +602,7 @@ async function bootApp(){
     el('welcome-message').textContent =
       `Order real, high-quality engagement for Telegram, YouTube, Facebook, Instagram &amp; TikTok.\n\n` +
       (state.settings.ads_earning_enabled
-        ? `💰 No balance? Watch ads to earn ${state.settings.currency_symbol}${money(state.settings.ad_reward)} per ad, up to ${state.settings.daily_ad_limit}/day.\n`
+        ? `💰 No balance? Watch ads to earn ${state.settings.currency_symbol}${formatBalance(state.settings.ad_reward)} per ad, up to ${state.settings.daily_ad_limit}/day.\n`
         : `💰 To add funds, use the "Contact Admin" button on the Funds tab.\n`) +
       `⚡ Orders are placed automatically with our provider where available.\n` +
       `🔑 Find your personal API key and full docs under the Profile tab.`;
