@@ -103,7 +103,7 @@ async function loadDashboard(){
       <td>#${o.id}</td>
       <td>${escapeHTML(o.first_name)} (${escapeHTML(o.telegram_id)})</td>
       <td>${escapeHTML(o.service_name)}</td>
-      <td>$${money(o.charge)}</td>
+      <td>$${money8(o.charge)}</td>
       <td><span class="badge ${o.status === 'Completed' ? 'active' : 'inactive'}">${escapeHTML(o.status)}</span></td>
       <td>${new Date(o.created_at).toLocaleDateString()}</td>
     </tr>`).join('') || `<tr><td colspan="6" style="text-align:center;color:var(--text-dim);">No orders yet</td></tr>`;
@@ -268,29 +268,63 @@ async function deleteService(id){
 }
 
 // ---------------- Orders ----------------
+let orderStatusFilter = '';
 async function loadOrders(){
-  const status = el('order-status-filter').value;
-  const { orders } = await api('/api/admin/orders' + (status ? `?status=${status}` : ''));
+  const { orders } = await api('/api/admin/orders' + (orderStatusFilter ? `?status=${orderStatusFilter}` : ''));
   cache.orders = orders;
+  renderOrdersTable();
+}
+function renderOrdersTable(){
+  const q = (el('order-search').value || '').trim().toLowerCase();
+  let orders = cache.orders || [];
+  if (q) orders = orders.filter(o =>
+    String(o.id).includes(q) || o.service_name.toLowerCase().includes(q) ||
+    o.link.toLowerCase().includes(q) || String(o.service_public_id || '').includes(q)
+  );
+
+  const statusPill = (status) => {
+    const map = {
+      Pending: 'status-pending', Processing: 'status-processing', Completed: 'status-completed',
+      Partial: 'status-partial', Cancelled: 'status-cancelled',
+    };
+    return `<span class="order-status-pill ${map[status] || ''}">${escapeHTML(status)}</span>`;
+  };
+
   const tbody = document.querySelector('#orders-table tbody');
   tbody.innerHTML = orders.map(o => `
     <tr>
       <td>#${o.id}</td>
-      <td>${escapeHTML(o.first_name)}<br><span style="color:var(--text-faint);font-size:11.5px;">${escapeHTML(o.telegram_id)}</span></td>
-      <td>${escapeHTML(o.service_name)}</td>
-      <td><a href="${escapeHTML(o.link)}" target="_blank" style="color:var(--primary);">Open link</a></td>
+      <td>${new Date(o.created_at).toLocaleString()}</td>
+      <td><a href="${escapeHTML(o.link)}" target="_blank" style="color:var(--primary);">${escapeHTML(o.link.length > 34 ? o.link.slice(0, 34) + '…' : o.link)}</a></td>
+      <td>$${money8(o.charge)}</td>
+      <td>${o.start_count ?? '-'}</td>
       <td>${o.quantity.toLocaleString()}</td>
-      <td>$${money(o.charge)}</td>
-      <td><span class="badge ${o.source === 'api' ? 'active' : 'inactive'}">${o.source === 'api' ? 'API' : 'App'}</span></td>
-      <td>${o.provider_order_id ? escapeHTML(o.provider_order_id) : (o.provider_error ? `<span title="${escapeHTML(o.provider_error)}" style="color:var(--danger);">failed</span>` : '—')}</td>
-      <td><span class="badge ${o.status === 'Completed' ? 'active' : (o.status === 'Cancelled' ? '' : 'inactive')}" style="${o.status === 'Cancelled' ? 'color:var(--danger);background:var(--danger-bg);' : ''}">${escapeHTML(o.status)}</span>${o.refill_status ? `<br><span class="badge inactive" style="margin-top:4px;">Refill: ${escapeHTML(o.refill_status)}</span>` : ''}</td>
-      <td>${new Date(o.created_at).toLocaleDateString()}</td>
-      <td class="actions">
-        ${o.provider_order_id ? `<button class="btn btn-sm btn-ghost" onclick="syncOrder(${o.id})" title="Pull latest status from provider"><i class="fa-solid fa-rotate"></i></button>` : ''}
-        ${o.status !== 'Cancelled' && o.status !== 'Completed' ? `<button class="btn btn-sm btn-ghost" onclick="cancelOrder(${o.id})" style="color:var(--danger);" title="Cancel &amp; refund"><i class="fa-solid fa-ban"></i></button>` : ''}
+      <td>
+        <div style="font-weight:600;">${o.service_public_id ? `<code>${o.service_public_id}</code> - ` : ''}${escapeHTML(o.service_name)}</div>
+        <div style="color:var(--text-faint);font-size:11px;">${escapeHTML(o.first_name)} · ${escapeHTML(o.telegram_id)}</div>
       </td>
-    </tr>`).join('') || `<tr><td colspan="11" style="text-align:center;color:var(--text-dim);">No orders found</td></tr>`;
+      <td>${o.remains ?? '-'}</td>
+      <td>${statusPill(o.status)}${o.refill_status ? `<br><span class="badge inactive" style="margin-top:4px;">Refill: ${escapeHTML(o.refill_status)}</span>` : ''}</td>
+      <td>
+        <div class="qa-dropdown">
+          <button class="btn btn-sm btn-ghost qa-toggle" onclick="toggleQuickActions(this)">Actions <i class="fa-solid fa-caret-down"></i></button>
+          <div class="qa-menu hidden">
+            ${o.provider_order_id ? `<button onclick="syncOrder(${o.id})"><i class="fa-solid fa-rotate"></i> Sync Status</button>` : ''}
+            ${o.status !== 'Cancelled' && o.status !== 'Completed' ? `<button onclick="cancelOrder(${o.id})" style="color:var(--danger);"><i class="fa-solid fa-ban"></i> Cancel &amp; Refund</button>` : ''}
+            <a href="${escapeHTML(o.link)}" target="_blank"><i class="fa-solid fa-arrow-up-right-from-square"></i> Open Link</a>
+          </div>
+        </div>
+      </td>
+    </tr>`).join('') || `<tr><td colspan="10" style="text-align:center;color:var(--text-dim);">No orders found</td></tr>`;
 }
+function toggleQuickActions(btn){
+  const menu = btn.nextElementSibling;
+  document.querySelectorAll('.qa-menu').forEach(m => { if (m !== menu) m.classList.add('hidden'); });
+  menu.classList.toggle('hidden');
+}
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.qa-dropdown')) document.querySelectorAll('.qa-menu').forEach(m => m.classList.add('hidden'));
+});
 async function syncOrder(id){
   try{ const res = await api(`/api/admin/orders/${id}/sync`, { method: 'POST' }); loadOrders(); }
   catch(e){ alert(e.message); }
@@ -349,7 +383,7 @@ async function openUserDetail(userId){
       </div>
       <h3 class="card-title">Recent Orders</h3>
       <div class="table-wrap"><table class="admin-table"><thead><tr><th>ID</th><th>Service</th><th>Charge</th><th>Status</th><th>Date</th></tr></thead><tbody>
-        ${recentOrders.map(o => `<tr><td>#${o.id}</td><td>${escapeHTML(o.service_name)}</td><td>$${money(o.charge)}</td><td>${escapeHTML(o.status)}</td><td>${new Date(o.created_at).toLocaleDateString()}</td></tr>`).join('') || `<tr><td colspan="5" style="text-align:center;color:var(--text-dim);">None</td></tr>`}
+        ${recentOrders.map(o => `<tr><td>#${o.id}</td><td>${escapeHTML(o.service_name)}</td><td>$${money8(o.charge)}</td><td>${escapeHTML(o.status)}</td><td>${new Date(o.created_at).toLocaleDateString()}</td></tr>`).join('') || `<tr><td colspan="5" style="text-align:center;color:var(--text-dim);">None</td></tr>`}
       </tbody></table></div>
       <h3 class="card-title" style="margin-top:16px;">Recent Transactions</h3>
       <div class="table-wrap"><table class="admin-table"><thead><tr><th>Type</th><th>Amount</th><th>Note</th><th>Date</th></tr></thead><tbody>
@@ -460,6 +494,7 @@ async function saveSettings(){
   const keys = ['site_name','currency_symbol','bot_username','bot_token','channel_link','support_link',
                 'ads_earning_enabled','ad_reward','daily_ad_limit','cooldown_minutes',
                 'adsgram_enabled','adsgram_block_id','monetag_enabled','monetag_zone_id',
+                'gigapub_enabled','gigapub_block_id',
                 'provider_auto_order','provider_api_url','provider_api_key','force_join_enabled',
                 'start_text','start_image_url','start_button_text',
                 'order_log_enabled','order_log_channel','order_log_image_url','order_log_button_text',
@@ -607,7 +642,15 @@ document.addEventListener('DOMContentLoaded', () => {
   el('save-fj-btn').addEventListener('click', saveForceJoin);
   el('add-promo-btn').addEventListener('click', openAddPromo);
   el('save-promo-btn').addEventListener('click', savePromo);
-  el('order-status-filter').addEventListener('change', loadOrders);
+  el('order-search').addEventListener('input', renderOrdersTable);
+  document.querySelectorAll('#order-status-pills .pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#order-status-pills .pill').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      orderStatusFilter = btn.dataset.status;
+      loadOrders();
+    });
+  });
   el('user-search').addEventListener('input', debounce(loadUsers, 350));
   el('save-balance-btn').addEventListener('click', saveBalanceAdjust);
   el('save-settings-btn').addEventListener('click', saveSettings);
