@@ -201,6 +201,57 @@ select.field{ appearance:none; -webkit-appearance:none; background-image:url("da
 .spinner{ width:16px; height:16px; border:2px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:spin .8s linear infinite; }
 .btn-outline .spinner, .btn-ghost .spinner{ border-color:rgba(53,86,245,.25); border-top-color:var(--primary); }
 
+/* ---------- API Docs (shared between docs.html standalone and the in-app Docs view) ---------- */
+body.docs-standalone{ padding:18px 16px 60px; max-width:640px; margin:0 auto; }
+.docs-header{ display:flex; align-items:center; gap:10px; margin-bottom:22px; }
+.docs-header button{ border:none; background:var(--surface-2); width:36px; height:36px; border-radius:10px; color:var(--text); font-size:15px; cursor:pointer; }
+.docs-header h1{ font-size:18px; margin:0; }
+.docs-back-row{ margin-bottom:14px; }
+.toc{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:24px; }
+.toc a{ font-size:12px; font-weight:600; color:var(--primary); background:var(--primary-tint); padding:7px 12px; border-radius:999px; text-decoration:none; }
+h2.section-title{ font-size:16px; margin:30px 0 12px; display:flex; align-items:center; gap:8px; scroll-margin-top:16px; }
+h2.section-title i{ color:var(--primary); }
+.doc-table{ width:100%; border-collapse:collapse; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; margin-bottom:14px; }
+.doc-table th{ text-align:left; background:var(--surface-2); padding:11px 14px; font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-dim); font-weight:700; }
+.doc-table td{ padding:12px 14px; border-top:1px solid var(--border); font-size:13.5px; }
+.doc-table td:first-child{ font-family:monospace; color:var(--primary-dim); font-weight:600; white-space:nowrap; }
+.code-block{ background:#0F1115; color:#D7DBE0; border-radius:var(--radius); padding:16px; font-family:'SFMono-Regular',Consolas,monospace; font-size:12px; line-height:1.7; overflow-x:auto; white-space:pre; margin-bottom:14px; }
+.code-block .k{ color:#7DD3FC; }
+.code-block .s{ color:#86EFAC; }
+.code-block .c{ color:#6B7280; }
+.note{ font-size:12.5px; color:var(--text-dim); margin:-6px 0 14px; line-height:1.6; }
+/* ---------- Order card (stacked label/value layout) ---------- */
+.order-card{ background:var(--surface-2); border:1px solid var(--border); border-radius:14px; padding:14px 16px; margin-bottom:12px; }
+.order-card-top{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+.order-card-service{ font-weight:700; font-size:13.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.order-card-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:8px; }
+.ocg-field{ display:flex; flex-direction:column; gap:2px; }
+.ocg-label{ font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--text-faint); }
+.ocg-value{ font-size:13px; font-weight:600; color:var(--text); }
+.ocg-link{ margin-top:4px; }
+.ocg-link-value{ font-weight:500; font-size:12px; color:var(--primary-dim); word-break:break-all; }
+.order-card-actions{ margin-top:10px; display:flex; }
+
+/* ---------- History tab list / status filter ---------- */
+#orders-history-controls{ margin-bottom:2px; }
+#order-status-filter{ margin-bottom:14px; }
+
+/* ---------- Brand mark image (falls back to "TG" text if no custom logo present) ---------- */
+.brand-mark img, .preloader-mark img{ width:100%; height:100%; object-fit:contain; border-radius:inherit; }
+
+/* ---------- Neon / glow visual effects (applied to key interactive elements) ---------- */
+.glow-shadow{ box-shadow:0 0 20px rgba(37,99,235,.45); }
+.glow-outer{ box-shadow:0 0 35px rgba(0,140,255,.6); }
+.glow-inner{ box-shadow:inset 0 0 10px rgba(255,255,255,.05); }
+.glow-blur{ backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); }
+
+.balance-card{ box-shadow:0 0 20px rgba(37,99,235,.45), inset 0 0 10px rgba(255,255,255,.05); }
+.btn-submit:not(:disabled){ box-shadow:0 0 35px rgba(0,140,255,.6); }
+.watch-ad-circle{ box-shadow:0 0 35px rgba(0,140,255,.6), inset 0 0 10px rgba(255,255,255,.08); }
+.sdc-header{ box-shadow:inset 0 0 10px rgba(255,255,255,.05); }
+.nav-bar{ backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); }
+.modal-content{ backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); }
+
 /* ---------- Utility ---------- */
 .hidden{ display:none !important; }
 .text-dim{ color:var(--text-dim); }
