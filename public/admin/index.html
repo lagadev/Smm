@@ -3,18 +3,18 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TeleGrow Admin</title>
+<title>SMM API Center — Admin</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="../assets/css/style.css?v=6">
-<link rel="stylesheet" href="../assets/css/admin.css?v=6">
+<link rel="stylesheet" href="../assets/css/style.css?v=7">
+<link rel="stylesheet" href="../assets/css/admin.css?v=7">
 </head>
 <body class="admin-body" data-theme="dark">
 
 <!-- ===== Login ===== -->
 <div id="admin-login">
   <div class="login-card">
-    <div class="brand-mark"><img src="../assets/img/logo.svg" alt="TG" onerror="this.replaceWith(document.createTextNode('TG'))"></div>
-    <h2>TeleGrow Admin</h2>
+    <div class="brand-mark"><img src="../assets/img/logo.svg" alt="Logo" onerror="this.replaceWith(document.createTextNode('SA'))"></div>
+    <h2>Admin Login</h2>
     <p>Enter your admin password to continue.</p>
     <input class="field" type="password" id="login-password" placeholder="Admin password">
     <button class="btn btn-primary btn-block" id="login-button"><span class="button-text">Login</span><div class="spinner hidden"></div></button>
@@ -25,14 +25,13 @@
 <!-- ===== Shell ===== -->
 <div class="admin-shell hidden" id="admin-shell">
   <aside class="sidebar" id="sidebar">
-    <div class="brand"><div class="brand-mark"><img src="../assets/img/logo.svg" alt="TG" onerror="this.replaceWith(document.createTextNode('TG'))"></div></div>
+    <div class="brand"><div class="brand-mark"><img src="../assets/img/logo.svg" alt="Logo" onerror="this.replaceWith(document.createTextNode('SA'))"></div></div>
     <button class="side-link active" data-tab="dashboard"><i class="fa-solid fa-gauge"></i> Dashboard</button>
     <button class="side-link" data-tab="categories"><i class="fa-solid fa-layer-group"></i> Categories</button>
     <button class="side-link" data-tab="services"><i class="fa-solid fa-list-check"></i> Services</button>
     <button class="side-link" data-tab="orders"><i class="fa-solid fa-bag-shopping"></i> Orders</button>
     <button class="side-link" data-tab="users"><i class="fa-solid fa-users"></i> Users</button>
     <button class="side-link" data-tab="forcejoin"><i class="fa-solid fa-link"></i> Force Join</button>
-    <button class="side-link" data-tab="broadcast"><i class="fa-solid fa-bullhorn"></i> Broadcast</button>
     <button class="side-link" data-tab="promo"><i class="fa-solid fa-ticket"></i> Promo Codes</button>
     <button class="side-link" data-tab="settings"><i class="fa-solid fa-gear"></i> Settings</button>
     <button class="side-link logout" id="logout-button"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</button>
@@ -42,7 +41,7 @@
     <div class="admin-header">
       <div>
         <h1 id="page-title">Dashboard</h1>
-        <p id="page-sub">Overview of your TeleGrow panel</p>
+        <p id="page-sub">Overview of your panel</p>
       </div>
       <button class="btn btn-ghost btn-sm" id="menu-toggle"><i class="fa-solid fa-bars"></i></button>
     </div>
@@ -75,9 +74,13 @@
       <div class="panel">
         <div class="panel-head">
           <h3>Services</h3>
-          <button class="btn btn-primary btn-sm" id="add-service-btn"><i class="fa-solid fa-plus"></i> Add Service</button>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-outline btn-sm" id="reapply-markup-btn"><i class="fa-solid fa-percent"></i> Reapply Markup</button>
+            <button class="btn btn-primary btn-sm" id="add-service-btn"><i class="fa-solid fa-plus"></i> Add Service</button>
+          </div>
         </div>
-        <div class="table-wrap"><table class="admin-table" id="services-table"><thead><tr><th>ID</th><th>Category</th><th>Name</th><th>Rate/1000</th><th>Min</th><th>Max</th><th>Refill</th><th>Status</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+        <p class="card-sub" style="margin-top:-6px;">Set Cost Rate + Markup % when adding a service and the sell Rate is calculated for you. "Reapply Markup" recomputes every service's rate from its saved cost + markup (or a new global markup you type in).</p>
+        <div class="table-wrap"><table class="admin-table" id="services-table"><thead><tr><th>ID</th><th>Category</th><th>Name</th><th>Cost</th><th>Markup</th><th>Sell Rate/1000</th><th>Refill</th><th>Status</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
       </div>
     </section>
 
@@ -96,7 +99,7 @@
           <button class="pill" data-status="Partial"><i class="fa-solid fa-circle-half-stroke"></i> Partial</button>
           <button class="pill" data-status="Cancelled"><i class="fa-solid fa-xmark"></i> Cancelled</button>
         </div>
-        <p class="card-sub" style="margin-top:-6px;">Orders auto-place with your provider and auto-sync every 5 minutes — use <strong>Sync</strong> for an on-demand refresh, or <strong>Cancel</strong> to refund the user.</p>
+        <p class="card-sub" style="margin-top:-6px;">Orders auto-place with your provider and auto-sync every minute — use <strong>Sync</strong> for an on-demand refresh, or <strong>Cancel</strong> to refund the user.</p>
         <div class="table-wrap"><table class="admin-table" id="orders-table"><thead><tr><th>ID</th><th>Date</th><th>Link</th><th>Charge</th><th>Start Count</th><th>Quantity</th><th>Service</th><th>Remains</th><th>Status</th><th>Quick Actions</th></tr></thead><tbody></tbody></table></div>
       </div>
     </section>
@@ -121,40 +124,6 @@
       </div>
     </section>
 
-    <!-- Broadcast -->
-    <section class="admin-tab" id="tab-broadcast">
-      <div class="panel">
-        <h3 style="margin-top:0;">Send Broadcast Now</h3>
-        <p class="card-sub" style="margin-top:-6px;">Sends to every non-banned user via the bot. Large lists may take a few minutes to finish sending.</p>
-        <label>Message Text</label><textarea class="field" id="bc-text" rows="3" placeholder="Your announcement..."></textarea>
-        <div class="form-grid" style="margin-top:12px;">
-          <div><label>Image URL (optional)</label><input class="field" id="bc-image"></div>
-          <div><label>Button Text (optional)</label><input class="field" id="bc-button-text" placeholder="Open App"></div>
-          <div class="full"><label>Button URL (optional — defaults to the Mini App)</label><input class="field" id="bc-button-url"></div>
-        </div>
-        <button class="btn btn-primary" id="send-broadcast-btn" style="margin-top:14px;"><i class="fa-solid fa-paper-plane"></i> Send Broadcast</button>
-        <p class="card-sub" id="bc-last-result" style="margin-top:12px;margin-bottom:0;"></p>
-      </div>
-
-      <div class="panel">
-        <h3 style="margin-top:0;">Daily Auto Broadcast</h3>
-        <p class="card-sub" style="margin-top:-6px;">Runs automatically once a day — great for reminding users to finish today's ads.</p>
-        <div class="form-grid">
-          <div><label>Status</label>
-            <select class="field" id="set-daily_broadcast_enabled">
-              <option value="1">Enabled</option>
-              <option value="0">Disabled</option>
-            </select>
-          </div>
-          <div><label>Send Hour (UTC, 0-23)</label><input class="field" id="set-daily_broadcast_hour" type="number" min="0" max="23"></div>
-          <div class="full"><label>Message Text</label><textarea class="field" id="set-daily_broadcast_text" rows="2"></textarea></div>
-          <div><label>Image URL (optional)</label><input class="field" id="set-daily_broadcast_image"></div>
-          <div><label>Button Text</label><input class="field" id="set-daily_broadcast_button_text"></div>
-        </div>
-        <button class="btn btn-primary" id="save-daily-broadcast-btn" style="margin-top:14px;"><i class="fa-solid fa-floppy-disk"></i> Save Daily Broadcast</button>
-      </div>
-    </section>
-
     <!-- Promo Codes -->
     <section class="admin-tab" id="tab-promo">
       <div class="panel">
@@ -171,44 +140,36 @@
         <div class="form-grid">
           <div><label>Site Name</label><input class="field" id="set-site_name"></div>
           <div><label>Currency Symbol</label><input class="field" id="set-currency_symbol"></div>
+          <div><label>Currency Code</label><input class="field" id="set-currency" placeholder="BDT"></div>
           <div><label>Bot Username (no @)</label><input class="field" id="set-bot_username"></div>
           <div><label>Bot Token</label><input class="field" id="set-bot_token" type="password"></div>
           <div><label>Update Channel Link</label><input class="field" id="set-channel_link"></div>
           <div><label>Support Contact Link</label><input class="field" id="set-support_link"></div>
         </div>
       </div>
+
       <div class="panel">
-        <div class="panel-head"><h3 style="margin:0;">Ads &amp; Rewards</h3></div>
+        <div class="panel-head"><h3 style="margin:0;">Profit Markup</h3></div>
+        <p class="card-sub" style="margin-top:-8px;">Default markup % applied to new services when you fill in a Cost Rate. Existing services keep their own saved markup unless you use "Reapply Markup" on the Services tab.</p>
         <div class="form-grid">
-          <div><label>Ad Earning System</label>
-            <select class="field" id="set-ads_earning_enabled">
-              <option value="1">Enabled — users can watch ads to earn</option>
-              <option value="0">Disabled — users are directed to Contact Admin</option>
-            </select>
-          </div>
-          <div><label>Reward per Ad</label><input class="field" id="set-ad_reward" type="number" step="0.00000001"></div>
-          <div><label>Daily Ad Limit</label><input class="field" id="set-daily_ad_limit" type="number"></div>
-          <div><label>Cooldown (minutes)</label><input class="field" id="set-cooldown_minutes" type="number"></div>
+          <div><label>Default Markup %</label><input class="field" id="set-default_markup_percent" type="number" step="0.01"></div>
         </div>
       </div>
+
       <div class="panel">
-        <div class="panel-head"><h3 style="margin:0;">Ad Networks</h3></div>
-        <p class="card-sub" style="margin-top:-8px;">Enable one or more — the app tries AdsGram first, then Monetag.</p>
+        <div class="panel-head"><h3 style="margin:0;">Deposit Plans</h3></div>
+        <p class="card-sub" style="margin-top:-8px;">Shown as 3 tappable cards on the Funds tab. Users pay manually (bKash/Nagad/etc.) and you credit balance + bonus from Users → Adjust Balance once confirmed.</p>
         <div class="form-grid">
-          <div><label>AdsGram</label>
-            <select class="field" id="set-adsgram_enabled"><option value="1">Enabled</option><option value="0">Disabled</option></select>
-          </div>
-          <div><label>AdsGram Block ID</label><input class="field" id="set-adsgram_block_id" placeholder="e.g. 20722"></div>
-          <div><label>Monetag</label>
-            <select class="field" id="set-monetag_enabled"><option value="1">Enabled</option><option value="0">Disabled</option></select>
-          </div>
-          <div><label>Monetag Zone ID</label><input class="field" id="set-monetag_zone_id"></div>
-          <div><label>GigaPub</label>
-            <select class="field" id="set-gigapub_enabled"><option value="1">Enabled</option><option value="0">Disabled</option></select>
-          </div>
-          <div><label>GigaPub Block ID</label><input class="field" id="set-gigapub_block_id" placeholder="e.g. 7604"></div>
+          <div><label>Plan 1 Amount</label><input class="field" id="set-deposit_plan_1_amount" type="number"></div>
+          <div><label>Plan 1 Bonus</label><input class="field" id="set-deposit_plan_1_bonus" type="number"></div>
+          <div><label>Plan 2 Amount</label><input class="field" id="set-deposit_plan_2_amount" type="number"></div>
+          <div><label>Plan 2 Bonus</label><input class="field" id="set-deposit_plan_2_bonus" type="number"></div>
+          <div><label>Plan 3 Amount</label><input class="field" id="set-deposit_plan_3_amount" type="number"></div>
+          <div><label>Plan 3 Bonus</label><input class="field" id="set-deposit_plan_3_bonus" type="number"></div>
+          <div class="full"><label>Payment Instructions</label><textarea class="field" id="set-payment_instructions" rows="2"></textarea></div>
         </div>
       </div>
+
       <div class="panel">
         <div class="panel-head"><h3 style="margin:0;">Upstream Provider — smmgen.com</h3></div>
         <p class="card-sub" style="margin-top:-8px;">When set, new orders are automatically placed with your provider. Also map each service's "Provider Service ID" from the Services tab.</p>
@@ -223,17 +184,7 @@
           <div class="full"><label>Provider API Key</label><input class="field" id="set-provider_api_key" type="password"></div>
         </div>
       </div>
-      <div class="panel">
-        <div class="panel-head"><h3 style="margin:0;">Bot Control — /start</h3></div>
-        <p class="card-sub" style="margin-top:-8px;">Shown when a user sends /start to your bot, with an "Open App" button attached.</p>
-        <div class="form-grid">
-          <div class="full"><label>Start Message</label><textarea class="field" id="set-start_text" rows="3"></textarea></div>
-          <div><label>Start Image URL (optional)</label><input class="field" id="set-start_image_url"></div>
-          <div><label>Button Text</label><input class="field" id="set-start_button_text"></div>
-        </div>
-        <button class="btn btn-outline" id="set-webhook-btn" style="margin-top:12px;"><i class="fa-solid fa-satellite-dish"></i> Set Webhook</button>
-        <p class="card-sub" id="webhook-status" style="margin-top:10px;margin-bottom:0;"></p>
-      </div>
+
       <div class="panel">
         <div class="panel-head"><h3 style="margin:0;">Force Join</h3></div>
         <div class="form-grid">
@@ -246,6 +197,7 @@
         </div>
         <p class="card-sub" style="margin-bottom:0;">Manage the actual channel list from the <strong>Force Join</strong> tab.</p>
       </div>
+
       <div class="panel">
         <div class="panel-head"><h3 style="margin:0;">Order Log Channel</h3></div>
         <p class="card-sub" style="margin-top:-8px;">Posts a formatted log to a channel every time an order is placed. Add your bot as admin of that channel first.</p>
@@ -258,6 +210,7 @@
           <div><label>Button Text</label><input class="field" id="set-order_log_button_text"></div>
         </div>
       </div>
+
       <div class="panel">
         <h3 style="margin-top:0;">Security</h3>
         <div class="form-grid">
@@ -290,7 +243,13 @@
     <label>Public Service ID (used in the API — leave blank on Add to auto-generate)</label><input class="field" id="service-public-id" placeholder="e.g. 100001">
     <label>Category</label><select class="field" id="service-category"></select>
     <label>Name</label><input class="field" id="service-name" placeholder="e.g. Telegram Channel Members">
-    <label>Rate per 1000</label><input class="field" id="service-rate" type="number" step="0.00000001">
+
+    <div class="form-grid">
+      <div><label>Cost Rate /1000 (what the provider charges)</label><input class="field" id="service-cost-rate" type="number" step="0.00000001"></div>
+      <div><label>Markup %</label><input class="field" id="service-markup" type="number" step="0.01"></div>
+    </div>
+    <label>Sell Rate /1000 (auto-calculated — editable to override)</label><input class="field" id="service-rate" type="number" step="0.00000001">
+
     <div class="form-grid">
       <div><label>Min Quantity</label><input class="field" id="service-min" type="number" value="100"></div>
       <div><label>Max Quantity</label><input class="field" id="service-max" type="number" value="10000"></div>
@@ -311,11 +270,20 @@
   </div>
 </div>
 
+<div id="reapplyMarkupModal" class="modal center">
+  <div class="modal-content modal-form">
+    <div class="modal-head"><h3 class="card-title" style="margin:0;">Reapply Markup</h3><span class="close-button" onclick="closeModal('reapplyMarkupModal')">&times;</span></div>
+    <p class="card-sub">Recomputes <code>rate = cost_rate x (1 + markup% / 100)</code> for every service that has a saved Cost Rate. Leave blank to use each service's own saved markup %, or type a value to apply the same markup to all of them at once.</p>
+    <label>New Markup % (optional — applies to all services)</label><input class="field" id="reapply-markup-value" type="number" step="0.01" placeholder="e.g. 50">
+    <button class="btn btn-primary btn-block" id="confirm-reapply-markup-btn" style="margin-top:8px;">Apply</button>
+  </div>
+</div>
+
 <div id="promoModal" class="modal center">
   <div class="modal-content modal-form">
     <div class="modal-head"><h3 class="card-title" id="promo-modal-title" style="margin:0;">Add Promo Code</h3><span class="close-button" onclick="closeModal('promoModal')">&times;</span></div>
     <input type="hidden" id="promo-id">
-    <label>Code</label><input class="field" id="promo-code" placeholder="e.g. MARCYDUDESDX7" style="text-transform:uppercase;">
+    <label>Code</label><input class="field" id="promo-code" placeholder="e.g. WELCOME50" style="text-transform:uppercase;">
     <label>Reward Amount</label><input class="field" id="promo-reward" type="number" step="0.00000001">
     <label>Max Claims (how many people can redeem it)</label><input class="field" id="promo-max-claims" type="number" value="100">
     <label>Status</label>
@@ -357,6 +325,6 @@
   </div>
 </div>
 
-<script src="../assets/js/admin.js?v=6"></script>
+<script src="../assets/js/admin.js?v=7"></script>
 </body>
 </html>
