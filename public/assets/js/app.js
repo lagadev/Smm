@@ -1,5 +1,5 @@
 // =====================================================
-// TeleGrow — Mini App front-end logic (v4)
+// Mini App front-end logic (v7 / Beta)
 // =====================================================
 const API = ""; // same-origin Worker
 
@@ -53,11 +53,20 @@ function hidePreloader() {
 }
 
 // ---------------- View switching ----------------
+let ordersPollTimer = null;
 function switchView(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
   el('view-' + name).classList.remove('hidden');
   document.querySelectorAll('.nav-button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
-  if (name === 'profile') { renderOrdersHistory(); renderTransactionsHistory(); }
+  if (name === 'profile') {
+    renderOrdersHistory();
+    renderTransactionsHistory();
+    if (ordersPollTimer) clearInterval(ordersPollTimer);
+    ordersPollTimer = setInterval(renderOrdersHistory, 15000); // near real-time refresh while this tab is open
+  } else if (ordersPollTimer) {
+    clearInterval(ordersPollTimer);
+    ordersPollTimer = null;
+  }
 }
 function switchHistoryTab(tab) {
   document.querySelectorAll('.history-tabs-row .pill').forEach(p => p.classList.toggle('active', p.dataset.tab === tab));
@@ -82,47 +91,42 @@ async function authenticate() {
 async function loadSettings() {
   const { settings } = await api('/api/settings/public');
   state.settings = settings;
-  const sym = settings.currency_symbol || '$';
+  const sym = settings.currency_symbol || '৳';
   document.querySelectorAll('#currency-symbol, .currency-symbol').forEach(n => n.textContent = sym);
-  el('ad-reward-label').textContent = `+${sym}${formatBalance(settings.ad_reward)} / ad`;
-  el('ad-reward-copy').textContent = `Watch a short ad to earn ${sym}${formatBalance(settings.ad_reward)} instantly. Up to ${settings.daily_ad_limit} ads per day.`;
+  document.querySelectorAll('.currency-unit').forEach(n => n.textContent = settings.currency || 'BDT');
   el('preloader-channel-link').href = settings.channel_link || '#';
 
-  el('ads-earning-card').classList.toggle('hidden', !settings.ads_earning_enabled);
-  el('ads-disabled-card').classList.toggle('hidden', !!settings.ads_earning_enabled);
-  if (settings.ads_earning_enabled) {
-    if (settings.adsgram_enabled && settings.adsgram_block_id) loadAdsgramSDK();
-    if (settings.monetag_enabled && settings.monetag_zone_id) loadMonetagSDK(settings.monetag_zone_id);
-    if (settings.gigapub_enabled && settings.gigapub_block_id) loadGigapubSDK(settings.gigapub_block_id);
-  }
+  const siteName = settings.site_name || 'SMM API Center';
+  document.title = siteName;
+  el('brand-name-text').textContent = siteName;
+
+  renderDepositPlans(settings.deposit_plans || []);
+  el('payment-instructions-text').textContent = settings.payment_instructions || '';
 }
 
-let adsgramController = null;
-function loadAdsgramSDK(){
-  const script = document.createElement('script');
-  script.src = 'https://sad.adsgram.ai/js/sad.min.js';
-  script.async = true;
-  script.onload = () => {
-    try{ adsgramController = window.Adsgram.init({ blockId: state.settings.adsgram_block_id }); }catch(e){}
-  };
-  document.body.appendChild(script);
+function renderDepositPlans(plans){
+  const sym = state.settings.currency_symbol || '৳';
+  el('deposit-plans').innerHTML = plans.map((p, i) => `
+    <button class="deposit-plan-card" data-index="${i}">
+      <div class="dpc-amount">${sym}${p.amount}</div>
+      ${p.bonus > 0 ? `<div class="dpc-bonus">+${sym}${p.bonus} bonus</div>` : `<div class="dpc-bonus dpc-bonus-none">No bonus</div>`}
+      <div class="dpc-total">Get ${sym}${(p.amount + p.bonus).toFixed(2)}</div>
+    </button>`).join('');
+  document.querySelectorAll('.deposit-plan-card').forEach(btn => {
+    btn.addEventListener('click', () => selectDepositPlan(plans[Number(btn.dataset.index)]));
+  });
 }
 
-function loadGigapubSDK(blockId){
-  const script = document.createElement('script');
-  script.src = `https://ad.gigapub.tech/script?id=${encodeURIComponent(blockId)}`;
-  script.async = true;
-  document.body.appendChild(script);
-}
-
-function loadMonetagSDK(zoneId){
-  if (!zoneId) return;
-  const script = document.createElement('script');
-  script.src = `//libtl.com/sdk.js`;
-  script.setAttribute('data-zone', zoneId);
-  script.setAttribute('data-sdk', `show_${zoneId}`);
-  script.async = true;
-  document.body.appendChild(script);
+function selectDepositPlan(plan){
+  const sym = state.settings.currency_symbol || '৳';
+  document.querySelectorAll('.deposit-plan-card').forEach(b => b.classList.remove('selected'));
+  const idx = (state.settings.deposit_plans || []).indexOf(plan);
+  if (idx >= 0) document.querySelectorAll('.deposit-plan-card')[idx]?.classList.add('selected');
+  el('payment-instructions-card').classList.remove('hidden');
+  el('payment-instructions-text').textContent =
+    `Plan selected: ${sym}${plan.amount}${plan.bonus > 0 ? ' + ' + sym + plan.bonus + ' bonus' : ''} = ${sym}${(plan.amount + plan.bonus).toFixed(2)} total. ` +
+    (state.settings.payment_instructions || '') + ' Then tap "Contact Admin to Add Funds" below with your payment proof.';
+  el('payment-instructions-card').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 // ---------------- Force-join gate (silent check, only shows if actually missing) ----------------
@@ -349,52 +353,6 @@ async function confirmOrder(){
   }
 }
 
-// ---------------- Add funds (watch ad) ----------------
-async function watchAd(){
-  el('ad-loader-overlay').style.display = 'flex';
-
-  const finish = async () => {
-    try{
-      const res = await api('/api/ad-reward', { method: 'POST', body: JSON.stringify({ telegram_id: state.user.telegram_id }) });
-      state.user.balance = res.balance;
-      updateBalanceUI();
-      loadUserStats();
-      el('ads-watched-label').textContent = `${res.watched_today} / ${res.daily_limit} today`;
-      haptic('success');
-      safeAlert(`+${state.settings.currency_symbol}${formatBalance(res.reward)} added to your wallet!`);
-    }catch(e){
-      safeAlert(e.message);
-    }finally{
-      el('ad-loader-overlay').style.display = 'none';
-    }
-  };
-  const fail = (msg) => {
-    el('ad-loader-overlay').style.display = 'none';
-    safeAlert(msg || 'Ad could not be loaded. Please try again.');
-  };
-
-  // Try AdsGram first, then Monetag, then GigaPub, then (dev/preview only) simulate a completed ad.
-  if (state.settings.adsgram_enabled && adsgramController) {
-    adsgramController.show().then(finish).catch(() => fail());
-    return;
-  }
-  const zoneId = state.settings.monetag_enabled ? state.settings.monetag_zone_id : null;
-  const monetagFn = zoneId ? window[`show_${zoneId}`] : null;
-  if (typeof monetagFn === 'function') {
-    monetagFn().then(finish).catch(() => fail());
-    return;
-  }
-  if (state.settings.gigapub_enabled && typeof window.showGiga === 'function') {
-    window.showGiga().then(finish).catch(() => fail());
-    return;
-  }
-  if (!state.settings.adsgram_enabled && !state.settings.monetag_enabled && !state.settings.gigapub_enabled) {
-    setTimeout(finish, 1200); // dev/preview fallback when no ad network is configured yet
-  } else {
-    fail('Ad network is still loading — please try again in a moment.');
-  }
-}
-
 // ---------------- Promo code ----------------
 async function applyPromoCode(){
   const input = el('promo-code-input');
@@ -488,6 +446,8 @@ function renderFilteredOrders(){
         <div class="ocg-field"><span class="ocg-label">Date</span><span class="ocg-value">${new Date(o.created_at).toLocaleDateString()}</span></div>
         <div class="ocg-field"><span class="ocg-label">Quantity</span><span class="ocg-value">${o.quantity.toLocaleString()}</span></div>
         <div class="ocg-field"><span class="ocg-label">Charge</span><span class="ocg-value">${state.settings.currency_symbol}${formatBalance(o.charge)}</span></div>
+        <div class="ocg-field"><span class="ocg-label">Start Count</span><span class="ocg-value">${o.start_count ?? '-'}</span></div>
+        <div class="ocg-field"><span class="ocg-label">Remains</span><span class="ocg-value">${o.remains ?? '-'}</span></div>
       </div>
       <div class="ocg-field ocg-link"><span class="ocg-label">Link</span><span class="ocg-value ocg-link-value">${escapeHTML(o.link)}</span></div>
       ${refillHtml ? `<div class="order-card-actions">${refillHtml}</div>` : ''}
@@ -512,7 +472,7 @@ async function renderTransactionsHistory(){
     const { transactions } = await api(`/api/transactions?telegram_id=${state.user.telegram_id}`);
     const wrap = el('funds-history');
     if (!transactions.length){ wrap.innerHTML = emptyState('fa-coins', 'No transactions yet'); return; }
-    const labels = { ad_reward: 'Ad Reward', order: 'Order Charge', admin_add: 'Admin Credit', admin_deduct: 'Admin Debit' };
+    const labels = { order: 'Order Charge', admin_add: 'Admin Credit', admin_deduct: 'Admin Debit', promo: 'Promo Code', deposit: 'Deposit' };
     wrap.innerHTML = transactions.map(t => `
       <div class="history-item">
         <div class="history-details">
@@ -546,7 +506,7 @@ async function init(){
     console.error(e);
     await preloaderDone;
     hidePreloader();
-    safeAlert('Failed to load TeleGrow: ' + e.message);
+    safeAlert('Failed to load the app: ' + e.message);
   }
 }
 
@@ -578,7 +538,6 @@ async function bootApp(){
   el('order-link').addEventListener('input', recomputeCharge);
   el('order-qty').addEventListener('input', recomputeCharge);
   el('confirm-order-button').addEventListener('click', confirmOrder);
-  el('watch-ad-button').addEventListener('click', watchAd);
   el('copy-token-btn').addEventListener('click', copyToken);
   el('regen-token-btn').addEventListener('click', regenerateToken);
   el('contact-admin-fund-button').addEventListener('click', () => safeTgOpen(state.settings.support_link));
@@ -598,12 +557,10 @@ async function bootApp(){
 
   // One-time welcome — flag is stored server-side (users.onboarded), so it truly shows only once ever.
   if (!state.user.onboarded) {
-    el('welcome-title').textContent = `Welcome to ${state.settings.site_name || 'TeleGrow'}!`;
+    el('welcome-title').textContent = `Welcome to ${state.settings.site_name || 'SMM API Center'}!`;
     el('welcome-message').textContent =
       `Order real, high-quality engagement for Telegram, YouTube, Facebook, Instagram &amp; TikTok.\n\n` +
-      (state.settings.ads_earning_enabled
-        ? `💰 No balance? Watch ads to earn ${state.settings.currency_symbol}${formatBalance(state.settings.ad_reward)} per ad, up to ${state.settings.daily_ad_limit}/day.\n`
-        : `💰 To add funds, use the "Contact Admin" button on the Funds tab.\n`) +
+      `💰 Add funds anytime from the Funds tab — pick a deposit plan and contact admin to confirm.\n` +
       `⚡ Orders are placed automatically with our provider where available.\n` +
       `🔑 Find your personal API key and full docs under the Profile tab.`;
     showModal('welcomeModal');
