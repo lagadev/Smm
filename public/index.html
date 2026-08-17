@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>TeleGrow — Grow Your Social Presence</title>
+<title>Your SMM API Center</title>
 
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -25,9 +25,7 @@
   <div class="preloader-mark"><img src="assets/img/logo.svg" alt="TG" onerror="this.replaceWith(document.createTextNode('TG'))"></div>
   <div id="preloader-percentage">0%</div>
 </div>
-<div id="preloader-footer"><a href="#" id="preloader-channel-link" target="_blank">Powered by TeleGrow</a></div>
-
-<div id="ad-loader-overlay"><div class="loader"></div><span id="ad-loader-text">Loading ad…</span></div>
+<div id="preloader-footer"><a href="#" id="preloader-channel-link" target="_blank">Powered by Your SMM API Center</a></div>
 
 <!-- ===== Force Join gate ===== -->
 <div id="force-join-gate" class="fj-gate hidden">
@@ -50,7 +48,7 @@
   <div class="topbar">
     <div class="brand">
       <div class="brand-mark"><img src="assets/img/logo.svg" alt="TG" onerror="this.replaceWith(document.createTextNode('TG'))"></div>
-      <div class="brand-name">Tele<span>Grow</span></div>
+      <div class="brand-name" id="brand-name-text">SMM API Center</div>
     </div>
     <div id="profile-pic"><i class="fa-solid fa-user"></i></div>
   </div>
@@ -61,7 +59,7 @@
       <div class="balance-top">
         <div>
           <div class="balance-label">Wallet Balance</div>
-          <div class="balance-amount"><span id="currency-symbol">$</span><span id="total-balance">0.00000000</span><small>USDT</small></div>
+          <div class="balance-amount"><span id="currency-symbol">৳</span><span id="total-balance">0.00000000</span><small class="currency-unit">BDT</small></div>
         </div>
         <i class="fa-solid fa-wallet" style="font-size:20px;color:rgba(255,255,255,.85);"></i>
       </div>
@@ -158,25 +156,17 @@
   <section id="view-funds" class="view hidden">
     <div class="balance-card balance-card-sm">
       <div class="balance-label">Wallet Balance</div>
-      <div class="balance-amount"><span class="currency-symbol">$</span><span class="total-balance-mirror">0.00000000</span><small>USDT</small></div>
+      <div class="balance-amount"><span class="currency-symbol">৳</span><span class="total-balance-mirror">0.00000000</span><small class="currency-unit">BDT</small></div>
     </div>
 
-    <div class="card" id="ads-earning-card">
-      <h3 class="card-title" style="text-align:center;">Watch &amp; Earn</h3>
-      <p class="card-sub" id="ad-reward-copy" style="text-align:center;">Watch a short ad to add funds to your wallet.</p>
-      <div class="watch-ad-circle-wrap">
-        <button class="watch-ad-circle pulsing" id="watch-ad-button">
-          <i class="fa-solid fa-play"></i>
-        </button>
-      </div>
-      <div class="service-meta" style="margin-top:16px;justify-content:center;gap:18px;">
-        <span id="ads-watched-label">0 / 15 today</span>
-        <span id="ad-reward-label">+$0.00 / ad</span>
-      </div>
+    <div class="card">
+      <h3 class="card-title">Add Funds</h3>
+      <p class="card-sub">Pick a deposit plan — bonus is added automatically once your admin confirms payment.</p>
+      <div class="deposit-plans" id="deposit-plans"></div>
     </div>
 
-    <div class="card hidden" id="ads-disabled-card">
-      <div class="notice-box"><i class="fa-solid fa-circle-info"></i><span>Ad earning is currently paused by the admin. Please contact support below to add funds.</span></div>
+    <div id="payment-instructions-card" class="card hidden">
+      <div class="notice-box"><i class="fa-solid fa-circle-info"></i><span id="payment-instructions-text"></span></div>
     </div>
 
     <div class="card">
@@ -208,7 +198,7 @@
       </div>
       <div style="text-align:right;">
         <div class="text-dim" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;">Balance</div>
-        <div style="font-family:var(--font-display);font-weight:800;font-size:15px;color:var(--primary);"><span class="currency-symbol">$</span><span class="total-balance-mirror">0.00000000</span></div>
+        <div style="font-family:var(--font-display);font-weight:800;font-size:15px;color:var(--primary);"><span class="currency-symbol">৳</span><span class="total-balance-mirror">0.00000000</span></div>
       </div>
     </div>
 
