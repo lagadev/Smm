@@ -252,6 +252,16 @@ h2.section-title i{ color:var(--primary); }
 .nav-bar{ backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); }
 .modal-content{ backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); }
 
+/* ---------- Deposit plans (Funds tab) ---------- */
+.deposit-plans{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+.deposit-plan-card{ background:var(--surface-2); border:2px solid var(--border); border-radius:14px; padding:14px 8px; text-align:center; cursor:pointer; transition:all .15s ease; }
+.deposit-plan-card:hover{ border-color:var(--primary); }
+.deposit-plan-card.selected{ border-color:var(--primary); background:var(--primary-tint); }
+.dpc-amount{ font-family:var(--font-display); font-weight:800; font-size:18px; }
+.dpc-bonus{ font-size:11px; font-weight:700; color:var(--success); margin-top:4px; }
+.dpc-bonus-none{ color:var(--text-faint); font-weight:500; }
+.dpc-total{ font-size:10.5px; color:var(--text-dim); margin-top:6px; }
+
 /* ---------- Utility ---------- */
 .hidden{ display:none !important; }
 .text-dim{ color:var(--text-dim); }
