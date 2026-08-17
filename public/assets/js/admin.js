@@ -1,5 +1,5 @@
 // =====================================================
-// TeleGrow — Admin panel logic
+// Admin panel logic (v7 / Beta)
 // =====================================================
 const API_BASE = window.location.origin; // API is same-origin; admin page lives one level deep
 
@@ -55,15 +55,14 @@ async function enterShell(){
 
 // ---------------- Tabs ----------------
 const TAB_TITLES = {
-  dashboard: ['Dashboard', 'Overview of your TeleGrow panel'],
+  dashboard: ['Dashboard', 'Overview of your panel'],
   categories: ['Categories', 'Manage service categories'],
   services: ['Services', 'Manage the services users can order'],
   orders: ['Orders', 'Review and update customer orders'],
   users: ['Users', 'Manage user balances and access'],
   forcejoin: ['Force Join', 'Channels users must join before using the app'],
-  broadcast: ['Broadcast', 'Message all users, plus a daily auto-reminder'],
   promo: ['Promo Codes', 'Codes users can redeem for a balance top-up'],
-  settings: ['Settings', 'Configure bot, ads, provider and rewards'],
+  settings: ['Settings', 'Configure bot, markup, deposits and provider'],
 };
 
 function switchTab(tab){
@@ -78,7 +77,6 @@ function switchTab(tab){
   if (tab === 'orders') loadOrders();
   if (tab === 'users') loadUsers();
   if (tab === 'forcejoin') loadForceJoin();
-  if (tab === 'broadcast') loadBroadcastTab();
   if (tab === 'promo') loadPromoCodes();
   if (tab === 'settings') loadSettings();
 }
@@ -93,8 +91,8 @@ async function loadDashboard(){
   el('stat-users').textContent = stats.total_users;
   el('stat-orders').textContent = stats.total_orders;
   el('stat-pending').textContent = stats.pending_orders;
-  el('stat-revenue').textContent = '$' + money(stats.total_revenue);
-  el('stat-liability').textContent = '$' + money(stats.total_user_balance);
+  el('stat-revenue').textContent = '৳' + money(stats.total_revenue);
+  el('stat-liability').textContent = '৳' + money(stats.total_user_balance);
 
   const { orders } = await api('/api/admin/orders');
   const tbody = document.querySelector('#recent-orders-table tbody');
@@ -103,7 +101,7 @@ async function loadDashboard(){
       <td>#${o.id}</td>
       <td>${escapeHTML(o.first_name)} (${escapeHTML(o.telegram_id)})</td>
       <td>${escapeHTML(o.service_name)}</td>
-      <td>$${money8(o.charge)}</td>
+      <td>৳${money8(o.charge)}</td>
       <td><span class="badge ${o.status === 'Completed' ? 'active' : 'inactive'}">${escapeHTML(o.status)}</span></td>
       <td>${new Date(o.created_at).toLocaleDateString()}</td>
     </tr>`).join('') || `<tr><td colspan="6" style="text-align:center;color:var(--text-dim);">No orders yet</td></tr>`;
@@ -184,9 +182,9 @@ async function loadServices(){
       <td><code>${s.public_id}</code></td>
       <td>${escapeHTML(s.category_name)}</td>
       <td>${escapeHTML(s.name)}</td>
-      <td>$${money8(s.rate)}</td>
-      <td>${s.min_qty.toLocaleString()}</td>
-      <td>${s.max_qty.toLocaleString()}</td>
+      <td>${s.cost_rate != null ? '$' + money8(s.cost_rate) : '—'}</td>
+      <td>${s.markup_percent != null ? s.markup_percent + '%' : '—'}</td>
+      <td>৳${money8(s.rate)}</td>
       <td>${s.refill_days > 0 ? s.refill_days + 'd' : '—'}</td>
       <td><span class="badge ${s.status === 'active' ? 'active' : 'inactive'}">${s.status}</span></td>
       <td class="actions">
@@ -196,11 +194,21 @@ async function loadServices(){
     </tr>`).join('') || `<tr><td colspan="9" style="text-align:center;color:var(--text-dim);">No services yet</td></tr>`;
 }
 
+function recomputeServiceRate(){
+  const cost = parseFloat(el('service-cost-rate').value);
+  const markup = parseFloat(el('service-markup').value);
+  if (Number.isFinite(cost) && Number.isFinite(markup)) {
+    el('service-rate').value = (cost * (1 + markup / 100)).toFixed(8);
+  }
+}
+
 function openAddService(){
   el('service-modal-title').textContent = 'Add Service';
   el('service-id').value = '';
   el('service-public-id').value = '';
   el('service-name').value = '';
+  el('service-cost-rate').value = '';
+  el('service-markup').value = cache.settings.default_markup_percent || 50;
   el('service-rate').value = '';
   el('service-min').value = 100;
   el('service-max').value = 10000;
@@ -222,6 +230,8 @@ function editService(id){
   el('service-public-id').value = s.public_id;
   el('service-category').value = s.category_id;
   el('service-name').value = s.name;
+  el('service-cost-rate').value = s.cost_rate ?? '';
+  el('service-markup').value = s.markup_percent ?? '';
   el('service-rate').value = s.rate;
   el('service-min').value = s.min_qty;
   el('service-max').value = s.max_qty;
@@ -241,6 +251,8 @@ async function saveService(){
     public_id: el('service-public-id').value.trim() || null,
     category_id: parseInt(el('service-category').value, 10),
     name: el('service-name').value.trim(),
+    cost_rate: el('service-cost-rate').value.trim() || null,
+    markup_percent: el('service-markup').value.trim() || null,
     rate: parseFloat(el('service-rate').value),
     min_qty: parseInt(el('service-min').value, 10) || 100,
     max_qty: parseInt(el('service-max').value, 10) || 10000,
@@ -253,7 +265,7 @@ async function saveService(){
     provider_id: el('service-provider').value.trim() || null,
     status: el('service-status').value,
   };
-  if (!payload.name || !payload.category_id || !payload.rate) return alert('Category, name and rate are required');
+  if (!payload.name || !payload.category_id) return alert('Category and name are required');
   try{
     if (id) await api(`/api/admin/services/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
     else await api('/api/admin/services', { method: 'POST', body: JSON.stringify(payload) });
@@ -265,6 +277,17 @@ async function deleteService(id){
   if (!confirm('Delete this service?')) return;
   try{ await api(`/api/admin/services/${id}`, { method: 'DELETE' }); loadServices(); }
   catch(e){ alert(e.message); }
+}
+async function confirmReapplyMarkup(){
+  const val = el('reapply-markup-value').value.trim();
+  const payload = val ? { markup_percent: parseFloat(val) } : {};
+  try{
+    const res = await api('/api/admin/services/reapply-markup', { method: 'POST', body: JSON.stringify(payload) });
+    closeModal('reapplyMarkupModal');
+    el('reapply-markup-value').value = '';
+    alert(`Updated ${res.updated} service(s).`);
+    loadServices();
+  }catch(e){ alert(e.message); }
 }
 
 // ---------------- Orders ----------------
@@ -296,7 +319,7 @@ function renderOrdersTable(){
       <td>#${o.id}</td>
       <td>${new Date(o.created_at).toLocaleString()}</td>
       <td><a href="${escapeHTML(o.link)}" target="_blank" style="color:var(--primary);">${escapeHTML(o.link.length > 34 ? o.link.slice(0, 34) + '…' : o.link)}</a></td>
-      <td>$${money8(o.charge)}</td>
+      <td>৳${money8(o.charge)}</td>
       <td>${o.start_count ?? '-'}</td>
       <td>${o.quantity.toLocaleString()}</td>
       <td>
@@ -347,7 +370,7 @@ async function loadUsers(){
       <td>${escapeHTML(u.first_name)}</td>
       <td>${u.username ? '@' + escapeHTML(u.username) : '—'}</td>
       <td>${escapeHTML(u.telegram_id)}</td>
-      <td>$${money8(u.balance)}</td>
+      <td>৳${money8(u.balance)}</td>
       <td><span class="badge ${u.banned ? 'inactive' : 'active'}">${u.banned ? 'Banned' : 'Active'}</span></td>
       <td>${new Date(u.created_at).toLocaleDateString()}</td>
       <td class="actions">
@@ -376,14 +399,14 @@ async function openUserDetail(userId){
         <div><label>Name</label><div>${escapeHTML(user.first_name)}</div></div>
         <div><label>Username</label><div>${user.username ? '@' + escapeHTML(user.username) : '—'}</div></div>
         <div><label>Telegram ID</label><div>${escapeHTML(user.telegram_id)}</div></div>
-        <div><label>Balance</label><div>$${money8(user.balance)}</div></div>
+        <div><label>Balance</label><div>৳${money8(user.balance)}</div></div>
         <div><label>Status</label><div>${user.banned ? 'Banned' : 'Active'}</div></div>
         <div><label>Joined</label><div>${new Date(user.created_at).toLocaleString()}</div></div>
         <div class="full"><label>API Token</label><div style="font-family:monospace;font-size:12px;word-break:break-all;">${escapeHTML(user.api_token || '—')}</div></div>
       </div>
       <h3 class="card-title">Recent Orders</h3>
       <div class="table-wrap"><table class="admin-table"><thead><tr><th>ID</th><th>Service</th><th>Charge</th><th>Status</th><th>Date</th></tr></thead><tbody>
-        ${recentOrders.map(o => `<tr><td>#${o.id}</td><td>${escapeHTML(o.service_name)}</td><td>$${money8(o.charge)}</td><td>${escapeHTML(o.status)}</td><td>${new Date(o.created_at).toLocaleDateString()}</td></tr>`).join('') || `<tr><td colspan="5" style="text-align:center;color:var(--text-dim);">None</td></tr>`}
+        ${recentOrders.map(o => `<tr><td>#${o.id}</td><td>${escapeHTML(o.service_name)}</td><td>৳${money8(o.charge)}</td><td>${escapeHTML(o.status)}</td><td>${new Date(o.created_at).toLocaleDateString()}</td></tr>`).join('') || `<tr><td colspan="5" style="text-align:center;color:var(--text-dim);">None</td></tr>`}
       </tbody></table></div>
       <h3 class="card-title" style="margin-top:16px;">Recent Transactions</h3>
       <div class="table-wrap"><table class="admin-table"><thead><tr><th>Type</th><th>Amount</th><th>Note</th><th>Date</th></tr></thead><tbody>
@@ -463,7 +486,7 @@ function openBalanceModal(userId){
   const u = cache.users.find(x => x.id === userId);
   if (!u) return;
   el('balance-user-id').value = userId;
-  el('balance-user-label').textContent = `${u.first_name} (@${u.username || 'no-username'}) — current balance $${money8(u.balance)}`;
+  el('balance-user-label').textContent = `${u.first_name} (@${u.username || 'no-username'}) — current balance ৳${money8(u.balance)}`;
   el('balance-amount').value = '';
   el('balance-note').value = '';
   showModal('balanceModal');
@@ -488,15 +511,13 @@ async function loadSettings(){
   const { settings } = await api('/api/admin/settings');
   cache.settings = settings;
   Object.keys(settings).forEach(k => { const f = el('set-' + k); if (f) f.value = settings[k]; });
-  el('webhook-status').textContent = settings.bot_webhook_secret ? 'Webhook secret is set. Click "Set Webhook" any time you change the Bot Token or redeploy to a new URL.' : 'No webhook configured yet.';
 }
 async function saveSettings(){
-  const keys = ['site_name','currency_symbol','bot_username','bot_token','channel_link','support_link',
-                'ads_earning_enabled','ad_reward','daily_ad_limit','cooldown_minutes',
-                'adsgram_enabled','adsgram_block_id','monetag_enabled','monetag_zone_id',
-                'gigapub_enabled','gigapub_block_id',
+  const keys = ['site_name','currency_symbol','currency','bot_username','bot_token','channel_link','support_link',
+                'default_markup_percent',
+                'deposit_plan_1_amount','deposit_plan_1_bonus','deposit_plan_2_amount','deposit_plan_2_bonus',
+                'deposit_plan_3_amount','deposit_plan_3_bonus','payment_instructions',
                 'provider_auto_order','provider_api_url','provider_api_key','force_join_enabled',
-                'start_text','start_image_url','start_button_text',
                 'order_log_enabled','order_log_channel','order_log_image_url','order_log_button_text',
                 'admin_password'];
   const payload = {};
@@ -510,57 +531,6 @@ async function saveSettings(){
     alert('Settings saved.');
   }catch(e){ alert(e.message); }
 }
-async function setWebhook(){
-  const btn = el('set-webhook-btn');
-  btn.disabled = true;
-  el('webhook-status').textContent = 'Setting webhook…';
-  try{
-    const res = await api('/api/admin/telegram/set-webhook', { method: 'POST' });
-    el('webhook-status').textContent = `Webhook set: ${res.webhook_url}`;
-  }catch(e){
-    el('webhook-status').textContent = 'Error: ' + e.message;
-  }finally{
-    btn.disabled = false;
-  }
-}
-
-// ---------------- Broadcast ----------------
-async function loadBroadcastTab(){
-  const { settings } = await api('/api/admin/settings');
-  cache.settings = settings;
-  ['daily_broadcast_enabled','daily_broadcast_hour','daily_broadcast_text','daily_broadcast_image','daily_broadcast_button_text']
-    .forEach(k => { const f = el('set-' + k); if (f) f.value = settings[k] || ''; });
-  try{
-    const { result } = await api('/api/admin/broadcast/last-result');
-    el('bc-last-result').textContent = result ? `Last broadcast: ${result.sent} sent, ${result.failed} failed, out of ${result.total} — ${new Date(result.at).toLocaleString()}` : 'No broadcast sent yet.';
-  }catch(e){}
-}
-async function sendBroadcast(){
-  const text = el('bc-text').value.trim();
-  if (!text) return alert('Message text is required');
-  const btn = el('send-broadcast-btn');
-  btn.disabled = true;
-  try{
-    const res = await api('/api/admin/broadcast', { method: 'POST', body: JSON.stringify({
-      text, image_url: el('bc-image').value.trim() || null,
-      button_text: el('bc-button-text').value.trim() || null,
-      button_url: el('bc-button-url').value.trim() || null,
-    }) });
-    alert(res.message);
-    el('bc-text').value = ''; el('bc-image').value = ''; el('bc-button-text').value = ''; el('bc-button-url').value = '';
-    setTimeout(loadBroadcastTab, 4000);
-  }catch(e){ alert(e.message); }
-  finally{ btn.disabled = false; }
-}
-async function saveDailyBroadcast(){
-  const payload = {};
-  ['daily_broadcast_enabled','daily_broadcast_hour','daily_broadcast_text','daily_broadcast_image','daily_broadcast_button_text']
-    .forEach(k => { const f = el('set-' + k); if (f) payload[k] = f.value; });
-  try{
-    await api('/api/admin/settings', { method: 'PUT', body: JSON.stringify(payload) });
-    alert('Daily broadcast settings saved.');
-  }catch(e){ alert(e.message); }
-}
 
 // ---------------- Promo Codes ----------------
 async function loadPromoCodes(){
@@ -570,7 +540,7 @@ async function loadPromoCodes(){
   tbody.innerHTML = codes.map(c => `
     <tr>
       <td><code>${escapeHTML(c.code)}</code></td>
-      <td>$${money8(c.reward)}</td>
+      <td>৳${money8(c.reward)}</td>
       <td>${c.claimed_count} / ${c.max_claims}</td>
       <td><span class="badge ${c.status === 'active' ? 'active' : 'inactive'}">${c.status}</span></td>
       <td>${new Date(c.created_at).toLocaleDateString()}</td>
@@ -638,6 +608,10 @@ document.addEventListener('DOMContentLoaded', () => {
   el('save-category-btn').addEventListener('click', saveCategory);
   el('add-service-btn').addEventListener('click', openAddService);
   el('save-service-btn').addEventListener('click', saveService);
+  el('service-cost-rate').addEventListener('input', recomputeServiceRate);
+  el('service-markup').addEventListener('input', recomputeServiceRate);
+  el('reapply-markup-btn').addEventListener('click', () => showModal('reapplyMarkupModal'));
+  el('confirm-reapply-markup-btn').addEventListener('click', confirmReapplyMarkup);
   el('add-fj-btn').addEventListener('click', openAddForceJoin);
   el('save-fj-btn').addEventListener('click', saveForceJoin);
   el('add-promo-btn').addEventListener('click', openAddPromo);
@@ -654,9 +628,6 @@ document.addEventListener('DOMContentLoaded', () => {
   el('user-search').addEventListener('input', debounce(loadUsers, 350));
   el('save-balance-btn').addEventListener('click', saveBalanceAdjust);
   el('save-settings-btn').addEventListener('click', saveSettings);
-  el('set-webhook-btn').addEventListener('click', setWebhook);
-  el('send-broadcast-btn').addEventListener('click', sendBroadcast);
-  el('save-daily-broadcast-btn').addEventListener('click', saveDailyBroadcast);
 
   if (ADMIN_PASSWORD) {
     api('/api/admin/stats').then(enterShell).catch(() => { sessionStorage.removeItem('tg_admin_pw'); ADMIN_PASSWORD = ''; });
