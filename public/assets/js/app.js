@@ -1,5 +1,5 @@
 // =====================================================
-// Mini App front-end logic (v7 / Beta)
+// Mini App front-end logic (v8)
 // =====================================================
 const API = ""; // same-origin Worker
 
@@ -8,21 +8,24 @@ const tg = window.Telegram ? window.Telegram.WebApp : null;
 let state = {
   user: null,
   settings: {},
-  categories: [],
-  services: [],       // all active services (flat), used for search
-  visibleServices: [],
+  platforms: [],
+  categories: [],       // categories for the selected platform
+  services: [],          // all active services (flat), used for search
+  visibleServices: [],   // services for the selected category
+  selectedPlatform: null,
+  selectedCategory: null,
   selectedService: null,
+  paymentMethods: [],
+  fundsAmount: 0,
+  fundsMethod: null,
 };
 
 const el = (id) => document.getElementById(id);
 function escapeHTML(s){ if(!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-function money(n){ return (Number(n)||0).toFixed(2); }
-// Wallet balance always shows a full 8 decimals, e.g. 8.16583030
 function formatBalance(n){ return (Number(n) || 0).toFixed(8); }
 function safeAlert(msg){ if(tg && tg.showAlert){ tg.showAlert(msg); } else { alert(msg); } }
 function haptic(type){ try{ tg && tg.HapticFeedback && tg.HapticFeedback.notificationOccurred(type); }catch(e){} }
 function safeTgOpen(link){ if (!link) return; if (tg && tg.openTelegramLink) tg.openTelegramLink(link); else window.open(link, '_blank'); }
-function safeExternalOpen(link){ if (tg && tg.openLink) tg.openLink(link, { try_instant_view: false }); else window.open(link, '_blank'); }
 
 async function api(path, opts = {}) {
   const res = await fetch(API + path, { ...opts, headers: { "Content-Type": "application/json", ...(opts.headers || {}) } });
@@ -62,11 +65,12 @@ function switchView(name) {
     renderOrdersHistory();
     renderTransactionsHistory();
     if (ordersPollTimer) clearInterval(ordersPollTimer);
-    ordersPollTimer = setInterval(renderOrdersHistory, 15000); // near real-time refresh while this tab is open
+    ordersPollTimer = setInterval(renderOrdersHistory, 15000);
   } else if (ordersPollTimer) {
     clearInterval(ordersPollTimer);
     ordersPollTimer = null;
   }
+  if (name === 'funds') renderDepositRequests();
 }
 function switchHistoryTab(tab) {
   document.querySelectorAll('.history-tabs-row .pill').forEach(p => p.classList.toggle('active', p.dataset.tab === tab));
@@ -82,7 +86,7 @@ window.onclick = (e) => { if (e.target.classList && e.target.classList.contains(
 async function authenticate() {
   let body;
   if (tg && tg.initData) body = { initData: tg.initData };
-  else body = { debugUser: { id: 999999, first_name: 'Guest', username: 'guest' } }; // dev/preview fallback
+  else body = { debugUser: { id: 999999, first_name: 'Guest', username: 'guest' } };
   const { user } = await api('/api/auth', { method: 'POST', body: JSON.stringify(body) });
   state.user = user;
 }
@@ -94,92 +98,12 @@ async function loadSettings() {
   const sym = settings.currency_symbol || '৳';
   document.querySelectorAll('#currency-symbol, .currency-symbol').forEach(n => n.textContent = sym);
   document.querySelectorAll('.currency-unit').forEach(n => n.textContent = settings.currency || 'BDT');
+  el('funds-currency-sym').textContent = sym;
   el('preloader-channel-link').href = settings.channel_link || '#';
 
   const siteName = settings.site_name || 'SMM API Center';
   document.title = siteName;
   el('brand-name-text').textContent = siteName;
-
-  renderDepositPlans(settings.deposit_plans || []);
-  el('payment-instructions-text').textContent = settings.payment_instructions || '';
-}
-
-function renderDepositPlans(plans){
-  const sym = state.settings.currency_symbol || '৳';
-  el('deposit-plans').innerHTML = plans.map((p, i) => `
-    <button class="deposit-plan-card" data-index="${i}">
-      <div class="dpc-amount">${sym}${p.amount}</div>
-      ${p.bonus > 0 ? `<div class="dpc-bonus">+${sym}${p.bonus} bonus</div>` : `<div class="dpc-bonus dpc-bonus-none">No bonus</div>`}
-      <div class="dpc-total">Get ${sym}${(p.amount + p.bonus).toFixed(2)}</div>
-    </button>`).join('');
-  document.querySelectorAll('.deposit-plan-card').forEach(btn => {
-    btn.addEventListener('click', () => selectDepositPlan(plans[Number(btn.dataset.index)]));
-  });
-}
-
-function selectDepositPlan(plan){
-  const sym = state.settings.currency_symbol || '৳';
-  document.querySelectorAll('.deposit-plan-card').forEach(b => b.classList.remove('selected'));
-  const idx = (state.settings.deposit_plans || []).indexOf(plan);
-  if (idx >= 0) document.querySelectorAll('.deposit-plan-card')[idx]?.classList.add('selected');
-  el('payment-instructions-card').classList.remove('hidden');
-  el('payment-instructions-text').textContent =
-    `Plan selected: ${sym}${plan.amount}${plan.bonus > 0 ? ' + ' + sym + plan.bonus + ' bonus' : ''} = ${sym}${(plan.amount + plan.bonus).toFixed(2)} total. ` +
-    (state.settings.payment_instructions || '') + ' Then tap "Contact Admin to Add Funds" below with your payment proof.';
-  el('payment-instructions-card').scrollIntoView({ behavior: 'smooth', block: 'center' });
-}
-
-// ---------------- Force-join gate (silent check, only shows if actually missing) ----------------
-async function runForceJoinGate() {
-  const { enabled, channels } = await api('/api/force-join');
-  if (!enabled || !channels.length) return true;
-
-  // Silently verify first — if the user already joined everything, never show the gate at all.
-  let verifyResult;
-  try {
-    verifyResult = await api('/api/verify-join', { method: 'POST', body: JSON.stringify({ telegram_id: state.user.telegram_id }) });
-  } catch (e) {
-    return true; // don't block the app if verification itself fails
-  }
-  if (verifyResult.joined) return true;
-
-  el('fj-channel-list').innerHTML = channels.map(c => `
-    <div class="fj-channel missing" data-username="${escapeHTML(c.username)}">
-      <div class="fj-icon"><i class="${escapeHTML(c.icon || 'fa-brands fa-telegram')}"></i></div>
-      <div class="fj-title">${escapeHTML(c.title)}<small>@${escapeHTML(c.username)}</small></div>
-      <button class="btn btn-sm btn-outline" onclick="safeTgOpen('${(c.invite_link || ('https://t.me/' + c.username)).replace(/'/g,"\\'")}')">Join</button>
-    </div>`).join('');
-  el('force-join-gate').classList.remove('hidden');
-
-  return new Promise((resolve) => {
-    el('fj-verify-button').onclick = async () => {
-      const btn = el('fj-verify-button');
-      btn.querySelector('.button-text').classList.add('hidden');
-      btn.querySelector('.spinner').classList.remove('hidden');
-      el('fj-hint').textContent = '';
-      try {
-        const res = await api('/api/verify-join', { method: 'POST', body: JSON.stringify({ telegram_id: state.user.telegram_id }) });
-        if (res.joined) {
-          haptic('success');
-          el('force-join-gate').classList.add('hidden');
-          resolve(true);
-        } else {
-          haptic('error');
-          el('fj-hint').textContent = `Please join: ${res.missing.map(m => m.title).join(', ')}`;
-          document.querySelectorAll('.fj-channel').forEach(row => {
-            const missing = res.missing.some(m => m.username === row.dataset.username);
-            row.classList.toggle('missing', missing);
-            row.classList.toggle('joined', !missing);
-          });
-        }
-      } catch (e) {
-        el('fj-hint').textContent = e.message;
-      } finally {
-        btn.querySelector('.button-text').classList.remove('hidden');
-        btn.querySelector('.spinner').classList.add('hidden');
-      }
-    };
-  });
 }
 
 // ---------------- Home ----------------
@@ -223,61 +147,130 @@ async function regenerateToken(){
   else if (confirm('Regenerate your API key? The old key will stop working immediately.')) doIt();
 }
 
-// ---------------- New Order ----------------
-function renderCategorySelect(){
-  const sel = el('category-select');
-  sel.innerHTML = state.categories.map(c => `<option value="${c.id}">${escapeHTML(c.name)}</option>`).join('');
-  if (state.categories.length) loadServicesForCategory(state.categories[0].id);
+// ---------------- New Order: Platform grid ----------------
+function renderPlatformGrid(){
+  const grid = el('platform-grid');
+  grid.innerHTML = state.platforms.map(p => `
+    <button type="button" class="platform-item" data-id="${p.id}" title="${escapeHTML(p.name)}">
+      <i class="${escapeHTML(p.icon || 'fa-solid fa-star')}"></i>
+    </button>`).join('');
+  grid.querySelectorAll('.platform-item').forEach(btn => {
+    btn.addEventListener('click', () => selectPlatform(Number(btn.dataset.id)));
+  });
 }
 
-async function loadServicesForCategory(categoryId){
-  const { services } = await api(`/api/services?category_id=${categoryId}`);
-  state.visibleServices = services;
-  renderServiceOptions(services);
-}
+async function selectPlatform(platformId){
+  state.selectedPlatform = state.platforms.find(p => p.id === platformId) || null;
+  document.querySelectorAll('.platform-item').forEach(b => b.classList.toggle('selected', Number(b.dataset.id) === platformId));
 
-function renderServiceOptions(services){
-  const sel = el('service-select');
-  const sym = state.settings.currency_symbol || '$';
-  sel.innerHTML = '<option value="">Select a service</option>' +
-    services.map(s => `<option value="${s.public_id}">${s.public_id} - ${escapeHTML(s.name)} ~ ${sym}${formatBalance(s.rate)}/1000</option>`).join('');
+  const { categories } = await api(`/api/categories?platform_id=${platformId}`);
+  state.categories = categories;
+  state.selectedCategory = null;
   state.selectedService = null;
+  el('category-dd-header').disabled = false;
+  setDropdownHeader('category', null);
+  setDropdownHeader('service', null, 'Select a category first');
+  el('service-dd-header').disabled = true;
+  renderCategoryDropdownList();
   el('service-detail-card').classList.add('hidden');
   clearOrderFields();
 }
 
-async function loadAllServicesForSearch(){
-  const { services } = await api('/api/services');
-  state.services = services;
+// ---------------- Custom dropdowns ----------------
+function toggleDropdown(name, forceState){
+  const dd = el(name + '-dd');
+  const list = el(name + '-dd-list');
+  const isOpen = forceState != null ? forceState : list.classList.contains('hidden');
+  document.querySelectorAll('.dd-list').forEach(l => { if (l !== list) l.classList.add('hidden'); });
+  document.querySelectorAll('.dd').forEach(d => { if (d !== dd) d.classList.remove('open'); });
+  list.classList.toggle('hidden', !isOpen);
+  dd.classList.toggle('open', isOpen);
+}
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.dd')) {
+    document.querySelectorAll('.dd-list').forEach(l => l.classList.add('hidden'));
+    document.querySelectorAll('.dd').forEach(d => d.classList.remove('open'));
+  }
+});
+
+function setDropdownHeader(name, html, placeholder){
+  const content = el(name + '-dd-header').querySelector('.dd-header-content');
+  content.innerHTML = html || `<span class="dd-placeholder">${escapeHTML(placeholder || 'Select an option')}</span>`;
 }
 
-function handleSearch(){
-  const q = el('service-search').value.trim().toLowerCase();
-  if (!q) { loadServicesForCategory(el('category-select').value); return; }
-  const filtered = state.services.filter(s => s.name.toLowerCase().includes(q) || String(s.public_id).includes(q));
-  renderServiceOptions(filtered);
+function renderCategoryDropdownList(){
+  const list = el('category-dd-list');
+  if (!state.categories.length) { list.innerHTML = `<div class="dd-empty">No categories for this platform yet</div>`; }
+  else {
+    list.innerHTML = state.categories.map(c => `
+      <div class="dd-item" data-id="${c.id}">
+        <div class="dd-icon"><i class="${escapeHTML(c.icon || state.selectedPlatform.icon)}"></i></div>
+        <div class="dd-item-text">${escapeHTML(c.name)}</div>
+        ${c.tag ? `<span class="dd-tag">${escapeHTML(c.tag)}</span>` : ''}
+      </div>`).join('');
+  }
+  list.querySelectorAll('.dd-item').forEach(item => {
+    item.addEventListener('click', () => selectCategory(Number(item.dataset.id)));
+  });
+  el('category-dd-header').onclick = () => toggleDropdown('category');
 }
 
-function onCategoryChange(){
-  el('service-search').value = '';
-  loadServicesForCategory(el('category-select').value);
+async function selectCategory(categoryId){
+  state.selectedCategory = state.categories.find(c => c.id === categoryId) || null;
+  toggleDropdown('category', false);
+  document.querySelectorAll('#category-dd-list .dd-item').forEach(i => i.classList.toggle('selected', Number(i.dataset.id) === categoryId));
+
+  const c = state.selectedCategory;
+  setDropdownHeader('category', `
+    <div class="dd-icon"><i class="${escapeHTML(c.icon || state.selectedPlatform.icon)}"></i></div>
+    <span class="dd-text">${escapeHTML(c.name)}</span>`);
+
+  const { services } = await api(`/api/services?category_id=${categoryId}`);
+  state.visibleServices = services;
+  state.selectedService = null;
+  el('service-dd-header').disabled = false;
+  setDropdownHeader('service', null);
+  renderServiceDropdownList(services);
+  el('service-detail-card').classList.add('hidden');
+  clearOrderFields();
 }
 
-function onServiceChange(){
-  const publicId = el('service-select').value;
+function renderServiceDropdownList(services){
+  const list = el('service-dd-list');
+  const sym = state.settings.currency_symbol || '$';
+  if (!services.length) { list.innerHTML = `<div class="dd-empty">No services in this category yet</div>`; }
+  else {
+    list.innerHTML = services.map(s => `
+      <div class="dd-item" data-id="${s.public_id}">
+        <span class="dd-badge">${s.public_id}</span>
+        <div class="dd-item-text">${escapeHTML(s.name)} ~ ${sym}${formatBalance(s.rate)}/1000</div>
+      </div>`).join('');
+  }
+  list.querySelectorAll('.dd-item').forEach(item => {
+    item.addEventListener('click', () => selectService(item.dataset.id));
+  });
+  el('service-dd-header').onclick = () => toggleDropdown('service');
+}
+
+function selectService(publicId){
   const pool = state.visibleServices.length ? state.visibleServices : state.services;
   state.selectedService = pool.find(s => String(s.public_id) === String(publicId)) || null;
+  toggleDropdown('service', false);
+  document.querySelectorAll('#service-dd-list .dd-item').forEach(i => i.classList.toggle('selected', String(i.dataset.id) === String(publicId)));
+
   const s = state.selectedService;
   const card = el('service-detail-card');
+  const sym = state.settings.currency_symbol || '$';
 
   if (s){
+    setDropdownHeader('service', `<span class="dd-badge">${s.public_id}</span><span class="dd-text">${escapeHTML(s.name)}</span>`);
     el('qty-hint').textContent = `Min: ${s.min_qty.toLocaleString()} - Max: ${s.max_qty.toLocaleString()}`;
     el('order-qty').placeholder = `Between ${s.min_qty} and ${s.max_qty}`;
     el('order-avgtime').value = s.avg_time || '—';
 
     const refillText = s.refill_days > 0 ? `${s.refill_days} Days` : 'No Refill';
     el('sdc-id').textContent = '#' + s.public_id;
-    el('sdc-title').textContent = `${s.public_id} - ${s.name} ~ Max ${s.max_qty.toLocaleString()} ~ ${s.speed_info || ''} ~ ${s.start_type || ''} ~ ${refillText} ~ ${state.settings.currency_symbol}${formatBalance(s.rate)} per 1000`;
+    el('sdc-title').textContent = `${s.public_id} - ${s.name} ~ Max ${s.max_qty.toLocaleString()} ~ ${s.speed_info || ''} ~ ${s.start_type || ''} ~ ${refillText} ~ ${sym}${formatBalance(s.rate)} per 1000`;
     el('sdc-link-type').textContent = s.link_type || '—';
     el('sdc-start').textContent = s.start_type || '—';
     el('sdc-speed').textContent = s.speed_info || '—';
@@ -293,6 +286,22 @@ function onServiceChange(){
   recomputeCharge();
 }
 
+// ---------------- Direct search (bypasses platform/category pickers) ----------------
+async function loadAllServicesForSearch(){
+  const { services } = await api('/api/services');
+  state.services = services;
+}
+function handleSearch(){
+  const q = el('service-search').value.trim().toLowerCase();
+  if (!q) return;
+  const filtered = state.services.filter(s => s.name.toLowerCase().includes(q) || String(s.public_id).includes(q));
+  el('service-dd-header').disabled = false;
+  state.visibleServices = filtered;
+  renderServiceDropdownList(filtered);
+  toggleDropdown('service', true);
+}
+
+// ---------------- Charge / submit ----------------
 function recomputeCharge(){
   const s = state.selectedService;
   const qty = parseInt(el('order-qty').value, 10);
@@ -341,8 +350,6 @@ async function confirmOrder(){
     safeAlert(`Order #${order.id} placed! ${state.settings.currency_symbol}${formatBalance(order.charge)} deducted from your wallet.`);
     clearOrderFields();
     el('service-detail-card').classList.add('hidden');
-    el('service-select').value = '';
-    state.selectedService = null;
   }catch(e){
     haptic('error');
     safeAlert(e.message);
@@ -353,23 +360,79 @@ async function confirmOrder(){
   }
 }
 
-// ---------------- Promo code ----------------
-async function applyPromoCode(){
-  const input = el('promo-code-input');
-  const code = input.value.trim();
-  if (!code) return;
-  const btn = el('apply-promo-button');
+// ---------------- Add Funds — unique amount -> method -> reference flow ----------------
+function fundsGoStep(n){
+  [1,2,3].forEach(i => {
+    el('funds-step-' + i).classList.toggle('hidden', i !== n);
+    el('fs-dot-' + i).classList.toggle('active', i === n);
+    el('fs-dot-' + i).classList.toggle('done', i < n);
+  });
+}
+
+function renderFundsChips(){
+  const amounts = state.settings.deposit_quick_amounts && state.settings.deposit_quick_amounts.length
+    ? state.settings.deposit_quick_amounts : [500, 1000, 2000, 5000, 10000];
+  const sym = state.settings.currency_symbol || '৳';
+  el('funds-amount-chips').innerHTML = amounts.map(a => `<button type="button" class="amount-chip" data-amt="${a}">${sym}${a}</button>`).join('');
+  el('funds-amount-chips').querySelectorAll('.amount-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      el('funds-amount-input').value = chip.dataset.amt;
+      onFundsAmountInput();
+    });
+  });
+}
+function onFundsAmountInput(){
+  const val = parseFloat(el('funds-amount-input').value);
+  state.fundsAmount = Number.isFinite(val) && val > 0 ? val : 0;
+  el('funds-step1-next').disabled = state.fundsAmount <= 0;
+  document.querySelectorAll('.amount-chip').forEach(c => c.classList.toggle('active', Number(c.dataset.amt) === state.fundsAmount));
+}
+
+async function loadPaymentMethods(){
+  const { methods } = await api('/api/deposit/methods');
+  state.paymentMethods = methods;
+}
+function renderFundsMethods(){
+  const grid = el('funds-method-grid');
+  if (!state.paymentMethods.length) {
+    grid.innerHTML = `<div class="dd-empty" style="grid-column:1/-1;">No payment methods configured yet — ask the admin to add one.</div>`;
+    return;
+  }
+  grid.innerHTML = state.paymentMethods.map(m => `
+    <div class="method-card" data-id="${m.id}">
+      <div class="m-icon"><i class="${escapeHTML(m.icon || 'fa-solid fa-wallet')}"></i></div>
+      <div class="m-name">${escapeHTML(m.name)}</div>
+    </div>`).join('');
+  grid.querySelectorAll('.method-card').forEach(c => {
+    c.addEventListener('click', () => {
+      state.fundsMethod = state.paymentMethods.find(m => m.id === Number(c.dataset.id));
+      grid.querySelectorAll('.method-card').forEach(x => x.classList.toggle('selected', x === c));
+      el('funds-step2-next').disabled = false;
+    });
+  });
+}
+
+async function submitDepositRequest(){
+  if (!state.fundsMethod || state.fundsAmount <= 0) return;
+  const btn = el('funds-step2-next');
   btn.disabled = true;
   btn.querySelector('.button-text').classList.add('hidden');
   btn.querySelector('.spinner').classList.remove('hidden');
   try{
-    const res = await api('/api/promo/redeem', { method: 'POST', body: JSON.stringify({ telegram_id: state.user.telegram_id, code }) });
-    state.user.balance = res.balance;
-    updateBalanceUI();
-    loadUserStats();
+    const { request } = await api('/api/deposit/request', {
+      method: 'POST',
+      body: JSON.stringify({ telegram_id: state.user.telegram_id, method_id: state.fundsMethod.id, amount: state.fundsAmount }),
+    });
+    const sym = state.settings.currency_symbol || '৳';
+    el('funds-ref-code').textContent = request.reference_code;
+    el('funds-summary-amount').textContent = sym + Number(state.fundsAmount).toLocaleString();
+    el('funds-summary-method').textContent = state.fundsMethod.name;
+    el('funds-instructions').textContent =
+      (state.fundsMethod.account_info ? `Send to: ${state.fundsMethod.account_info}\n\n` : '') +
+      (state.fundsMethod.instructions || 'Include your reference code in the payment note, then wait for admin approval.');
+    fundsGoStep(3);
     haptic('success');
-    safeAlert(`+${state.settings.currency_symbol}${formatBalance(res.reward)} added! Promo code applied successfully.`);
-    input.value = '';
+    renderDepositRequests();
   }catch(e){
     haptic('error');
     safeAlert(e.message);
@@ -380,28 +443,95 @@ async function applyPromoCode(){
   }
 }
 
-// ---------------- In-app API docs ----------------
-let docsLoaded = false;
-async function openDocsInApp(){
-  switchView('docs');
-  if (docsLoaded) return;
+function fundsReset(){
+  state.fundsAmount = 0;
+  state.fundsMethod = null;
+  el('funds-amount-input').value = '';
+  document.querySelectorAll('.amount-chip').forEach(c => c.classList.remove('active'));
+  document.querySelectorAll('.method-card').forEach(c => c.classList.remove('selected'));
+  el('funds-step1-next').disabled = true;
+  el('funds-step2-next').disabled = true;
+  fundsGoStep(1);
+}
+
+function copyRefCode(){
+  const code = el('funds-ref-code').textContent;
+  navigator.clipboard.writeText(code).then(() => safeAlert('Reference code copied!')).catch(() => {});
+}
+
+async function renderDepositRequests(){
   try{
-    const res = await fetch('docs.html?v=6');
-    const html = await res.text();
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-    doc.querySelector('.docs-header')?.remove(); // we render our own Back button instead
-    el('docs-content').outerHTML = `<div id="docs-content">${doc.body.innerHTML}</div>`;
-    docsLoaded = true;
-    // Re-run the inline script that fills in the live API URL (module scripts in fetched HTML don't auto-execute).
-    const base = window.location.origin + '/api/v2';
-    const apiUrlEl = document.getElementById('api-url');
-    const phpUrlEl = document.getElementById('php-url');
-    if (apiUrlEl) apiUrlEl.textContent = base;
-    if (phpUrlEl) phpUrlEl.textContent = base;
-  }catch(e){
-    el('docs-content').innerHTML = `<p class="card-sub">Could not load documentation: ${escapeHTML(e.message)}</p>`;
-  }
+    const { requests } = await api(`/api/deposit/requests?telegram_id=${state.user.telegram_id}`);
+    const wrap = el('deposit-requests-list');
+    if (!requests.length){ wrap.innerHTML = emptyState('fa-sack-dollar', 'No deposit requests yet'); return; }
+    const sym = state.settings.currency_symbol || '৳';
+    wrap.innerHTML = requests.map(r => `
+      <div class="history-item">
+        <div class="history-details">
+          <span class="name">${escapeHTML(r.reference_code)}</span>
+          <span class="meta">${escapeHTML(r.method_name)} · ${new Date(r.created_at).toLocaleString()}</span>
+        </div>
+        <div class="history-amount">
+          <div class="amt">${sym}${Number(r.amount).toLocaleString()}</div>
+          <span class="status-badge ${r.status.toLowerCase()}">${escapeHTML(r.status)}</span>
+        </div>
+      </div>`).join('');
+  }catch(e){}
+}
+
+// ---------------- In-app API docs (generated inline — no extra file) ----------------
+function renderDocsHtml(){
+  const base = window.location.origin + '/api/v2';
+  return `
+  <div class="toc">
+    <a href="#api">API</a><a href="#services">Service List</a><a href="#add">Add Order</a>
+    <a href="#status">Order Status</a><a href="#refill">Refill</a><a href="#refillstatus">Refill Status</a>
+    <a href="#cancel">Cancel</a><a href="#balance">Balance</a>
+  </div>
+
+  <h2 class="section-title" id="api"><i class="fa-solid fa-plug"></i> API</h2>
+  <table class="doc-table">
+    <tr><th>HTTP Method</th><td>POST</td></tr>
+    <tr><th>API URL</th><td>${escapeHTML(base)}</td></tr>
+    <tr><th>API Key</th><td>Get your key on the <strong>Profile</strong> tab</td></tr>
+    <tr><th>Return format</th><td>JSON</td></tr>
+  </table>
+
+  <h2 class="section-title" id="services"><i class="fa-solid fa-list"></i> Service List</h2>
+  <table class="doc-table"><tr><th>Parameter</th><th>Description</th></tr><tr><td>key</td><td>Your API key</td></tr><tr><td>action</td><td>services</td></tr></table>
+  <div class="code-block">[
+  { <span class="k">"service"</span>: 100001, <span class="k">"name"</span>: <span class="s">"TikTok Likes USA"</span>, <span class="k">"category"</span>: <span class="s">"TikTok - Likes [ USA ]"</span>, <span class="k">"platform"</span>: <span class="s">"TikTok"</span>, <span class="k">"rate"</span>: <span class="s">"18.11"</span>, <span class="k">"min"</span>: <span class="s">"100"</span>, <span class="k">"max"</span>: <span class="s">"100000"</span>, <span class="k">"refill"</span>: false, <span class="k">"cancel"</span>: true }
+]</div>
+
+  <h2 class="section-title" id="add"><i class="fa-solid fa-bolt"></i> Add Order</h2>
+  <table class="doc-table"><tr><th>Parameter</th><th>Description</th></tr><tr><td>key</td><td>Your API key</td></tr><tr><td>action</td><td>add</td></tr><tr><td>service</td><td>Service ID</td></tr><tr><td>link</td><td>Link to page</td></tr><tr><td>quantity</td><td>Needed quantity</td></tr></table>
+  <div class="code-block">{ <span class="k">"order"</span>: 23501 }</div>
+
+  <h2 class="section-title" id="status"><i class="fa-solid fa-magnifying-glass"></i> Order Status</h2>
+  <table class="doc-table"><tr><th>Parameter</th><th>Description</th></tr><tr><td>key</td><td>Your API key</td></tr><tr><td>action</td><td>status</td></tr><tr><td>order / orders</td><td>Single ID, or comma-separated up to 100</td></tr></table>
+  <div class="code-block">{ <span class="k">"charge"</span>: <span class="s">"0.27819"</span>, <span class="k">"start_count"</span>: <span class="s">"3572"</span>, <span class="k">"status"</span>: <span class="s">"Partial"</span>, <span class="k">"remains"</span>: <span class="s">"157"</span>, <span class="k">"currency"</span>: <span class="s">"BDT"</span> }</div>
+
+  <h2 class="section-title" id="refill"><i class="fa-solid fa-rotate"></i> Create Refill</h2>
+  <table class="doc-table"><tr><th>Parameter</th><th>Description</th></tr><tr><td>key</td><td>Your API key</td></tr><tr><td>action</td><td>refill</td></tr><tr><td>order / orders</td><td>Single ID, or comma-separated up to 100</td></tr></table>
+  <div class="code-block">{ <span class="k">"refill"</span>: <span class="s">"1"</span> }</div>
+
+  <h2 class="section-title" id="refillstatus"><i class="fa-solid fa-clipboard-check"></i> Refill Status</h2>
+  <table class="doc-table"><tr><th>Parameter</th><th>Description</th></tr><tr><td>key</td><td>Your API key</td></tr><tr><td>action</td><td>refill_status</td></tr><tr><td>refill / refills</td><td>Single ID, or comma-separated up to 100</td></tr></table>
+  <div class="code-block">{ <span class="k">"status"</span>: <span class="s">"Completed"</span> }</div>
+
+  <h2 class="section-title" id="cancel"><i class="fa-solid fa-ban"></i> Create Cancel</h2>
+  <table class="doc-table"><tr><th>Parameter</th><th>Description</th></tr><tr><td>key</td><td>Your API key</td></tr><tr><td>action</td><td>cancel</td></tr><tr><td>orders</td><td>Order IDs, comma-separated (up to 100)</td></tr></table>
+  <div class="code-block">{ <span class="k">"2"</span>: { <span class="k">"order"</span>: 2, <span class="k">"cancel"</span>: 1 } }</div>
+
+  <h2 class="section-title" id="balance"><i class="fa-solid fa-wallet"></i> User Balance</h2>
+  <table class="doc-table"><tr><th>Parameter</th><th>Description</th></tr><tr><td>key</td><td>Your API key</td></tr><tr><td>action</td><td>balance</td></tr></table>
+  <div class="code-block">{ <span class="k">"balance"</span>: <span class="s">"100.84"</span>, <span class="k">"currency"</span>: <span class="s">"BDT"</span> }</div>
+
+  <p class="doc-note">All errors are returned as <code>{"error": "message"}</code> with HTTP 200, matching common SMM-panel API conventions.</p>`;
+}
+function openDocsInApp(){
+  switchView('docs');
+  el('docs-content').innerHTML = renderDocsHtml();
 }
 
 // ---------------- History (Profile tab) ----------------
@@ -472,7 +602,7 @@ async function renderTransactionsHistory(){
     const { transactions } = await api(`/api/transactions?telegram_id=${state.user.telegram_id}`);
     const wrap = el('funds-history');
     if (!transactions.length){ wrap.innerHTML = emptyState('fa-coins', 'No transactions yet'); return; }
-    const labels = { order: 'Order Charge', admin_add: 'Admin Credit', admin_deduct: 'Admin Debit', promo: 'Promo Code', deposit: 'Deposit' };
+    const labels = { order: 'Order Charge', admin_add: 'Admin Credit', admin_deduct: 'Admin Debit', deposit: 'Deposit' };
     wrap.innerHTML = transactions.map(t => `
       <div class="history-item">
         <div class="history-details">
@@ -497,10 +627,6 @@ async function init(){
 
     await preloaderDone;
     hidePreloader();
-
-    const joined = await runForceJoinGate();
-    if (!joined) return;
-
     await bootApp();
   }catch(e){
     console.error(e);
@@ -511,10 +637,13 @@ async function init(){
 }
 
 async function bootApp(){
-  const { categories } = await api('/api/categories');
-  state.categories = categories;
+  const { platforms } = await api('/api/platforms');
+  state.platforms = platforms;
+  renderPlatformGrid();
   await loadAllServicesForSearch();
-  renderCategorySelect();
+  await loadPaymentMethods();
+  renderFundsChips();
+  renderFundsMethods();
 
   updateBalanceUI();
   updateTokenUI();
@@ -532,17 +661,13 @@ async function bootApp(){
   el('profile-name').textContent = state.user.first_name || 'User';
   el('profile-id').textContent = 'ID: ' + state.user.telegram_id;
 
-  el('category-select').addEventListener('change', onCategoryChange);
-  el('service-select').addEventListener('change', onServiceChange);
   el('service-search').addEventListener('input', handleSearch);
   el('order-link').addEventListener('input', recomputeCharge);
   el('order-qty').addEventListener('input', recomputeCharge);
   el('confirm-order-button').addEventListener('click', confirmOrder);
   el('copy-token-btn').addEventListener('click', copyToken);
   el('regen-token-btn').addEventListener('click', regenerateToken);
-  el('contact-admin-fund-button').addEventListener('click', () => safeTgOpen(state.settings.support_link));
   el('api-docs-button').addEventListener('click', openDocsInApp);
-  el('apply-promo-button').addEventListener('click', applyPromoCode);
   el('order-search-input').addEventListener('input', renderFilteredOrders);
   document.querySelectorAll('#order-status-filter .pill').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -553,14 +678,18 @@ async function bootApp(){
     });
   });
 
+  el('funds-amount-input').addEventListener('input', onFundsAmountInput);
+  el('funds-step1-next').addEventListener('click', () => fundsGoStep(2));
+  el('funds-step2-next').addEventListener('click', submitDepositRequest);
+  el('funds-copy-ref').addEventListener('click', copyRefCode);
+
   safeTgAction();
 
-  // One-time welcome — flag is stored server-side (users.onboarded), so it truly shows only once ever.
   if (!state.user.onboarded) {
     el('welcome-title').textContent = `Welcome to ${state.settings.site_name || 'SMM API Center'}!`;
     el('welcome-message').textContent =
-      `Order real, high-quality engagement for Telegram, YouTube, Facebook, Instagram &amp; TikTok.\n\n` +
-      `💰 Add funds anytime from the Funds tab — pick a deposit plan and contact admin to confirm.\n` +
+      `Order real, high-quality engagement across TikTok, Instagram, YouTube, Facebook, Telegram &amp; more.\n\n` +
+      `💰 Add funds anytime from the Funds tab — pick a method, get your reference code, and our admin will confirm it.\n` +
       `⚡ Orders are placed automatically with our provider where available.\n` +
       `🔑 Find your personal API key and full docs under the Profile tab.`;
     showModal('welcomeModal');
