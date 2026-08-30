@@ -1,6 +1,8 @@
 /**
- * SMM Panel — Mini App backend (v7 / Beta)
+ * SMM Panel — Mini App backend (v8)
  * Cloudflare Worker + D1 + Cron Triggers
+ *
+ * Structure: Platform -> Category -> Service
  *
  * Mini App routes:
  *   GET  /api/settings/public
@@ -9,38 +11,35 @@
  *   GET  /api/user/stats?telegram_id=
  *   POST /api/user/regenerate-token       { telegram_id }
  *   POST /api/user/mark-onboarded         { telegram_id }
- *   GET  /api/categories
+ *   GET  /api/platforms
+ *   GET  /api/categories?platform_id=
  *   GET  /api/services?category_id=
  *   POST /api/order                       { telegram_id, service, link, quantity }
  *   POST /api/order/refill                { telegram_id, order_id }
  *   GET  /api/orders?telegram_id=
  *   GET  /api/transactions?telegram_id=
- *   POST /api/promo/redeem                { telegram_id, code }
- *   GET  /api/force-join
- *   POST /api/verify-join                 { telegram_id }
+ *   GET  /api/deposit/methods
+ *   POST /api/deposit/request             { telegram_id, method_id, amount }
+ *   GET  /api/deposit/requests?telegram_id=
  *
- * Reseller / child API (see /docs.html):
+ * Reseller / child API (see in-app Docs):
  *   POST /api/v2   { key, action: services|add|status|refill|refill_status|cancel|balance, ... }
  *
  * Admin routes — require header X-Admin-Password:
  *   POST /api/admin/login
  *   GET  /api/admin/stats
+ *   GET/POST/PUT/DELETE /api/admin/platforms(/:id)
  *   GET/POST/PUT/DELETE /api/admin/categories(/:id)
  *   GET/POST/PUT/DELETE /api/admin/services(/:id)   (supports cost_rate + markup_percent)
- *   POST /api/admin/services/reapply-markup         { markup_percent? }  — recompute rate for every service
+ *   POST /api/admin/services/reapply-markup         { markup_percent? }
  *   GET/PUT /api/admin/orders(/:id)   POST /api/admin/orders/:id/sync
  *   GET/PUT /api/admin/users(/:id)    GET /api/admin/users/:id/detail
- *   GET/POST/PUT/DELETE /api/admin/force-join(/:id)
- *   GET/POST/PUT/DELETE /api/admin/promo(/:id)
+ *   GET/POST/PUT/DELETE /api/admin/payment-methods(/:id)
+ *   GET /api/admin/deposits            PUT /api/admin/deposits/:id   { status, admin_note? }
  *   GET/PUT /api/admin/settings
  *
- * Order log: on every successful order, if order_log_enabled=1, a formatted
- * log is posted to order_log_channel (this is the only outbound bot message
- * this build sends — no /start replies, no broadcasts).
- *
  * Cron (wrangler.jsonc triggers.crons): "* * * * *" — syncs Processing orders
- * and pending refills from the provider every minute (Cloudflare's fastest
- * supported cron granularity).
+ * and pending refills from the provider every minute.
  */
 
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
@@ -62,6 +61,13 @@ function withCORS(headers = {}) {
 function genToken() {
   const bytes = crypto.getRandomValues(new Uint8Array(24));
   return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+function genRefCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let s = "";
+  const bytes = crypto.getRandomValues(new Uint8Array(8));
+  for (const b of bytes) s += chars[b % chars.length];
+  return `DEP-${s}`;
 }
 function parseIdList(raw) {
   return String(raw || "").split(",").map((s) => s.trim()).filter(Boolean).slice(0, 100);
@@ -170,7 +176,11 @@ async function refundOrder(db, order, note) {
 
 async function createOrder(db, user, servicePublicId, link, quantity, source) {
   const service = await db.prepare(
-    "SELECT s.*, c.name AS category_name FROM services s JOIN categories c ON c.id = s.category_id WHERE s.public_id = ? AND s.status = 'active'"
+    `SELECT s.*, c.name AS category_name, p.name AS platform_name
+     FROM services s
+     JOIN categories c ON c.id = s.category_id
+     JOIN platforms p ON p.id = c.platform_id
+     WHERE s.public_id = ? AND s.status = 'active'`
   ).bind(servicePublicId).first();
   if (!service) return { error: "Service not found or inactive" };
 
@@ -184,13 +194,12 @@ async function createOrder(db, user, servicePublicId, link, quantity, source) {
   if (charge <= 0) return { error: "Invalid charge calculated" };
   if (user.balance < charge) return { error: "Insufficient balance" };
 
-  const beforeBalance = user.balance;
   await db.prepare("UPDATE users SET balance = balance - ? WHERE id = ?").bind(charge, user.id).run();
   const refillAvailable = service.refill_days > 0 ? 1 : 0;
   const insert = await db.prepare(
-    `INSERT INTO orders (user_id, service_id, service_public_id, service_name, category_name, link, quantity, charge, status, source, refill_available)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?)`
-  ).bind(user.id, service.id, service.public_id, service.name, service.category_name, link, qty, charge, source, refillAvailable).run();
+    `INSERT INTO orders (user_id, service_id, service_public_id, service_name, category_name, platform_name, link, quantity, charge, status, source, refill_available)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?)`
+  ).bind(user.id, service.id, service.public_id, service.name, service.category_name, service.platform_name, link, qty, charge, source, refillAvailable).run();
   const orderId = insert.meta.last_row_id;
   await db.prepare("INSERT INTO transactions (user_id, type, amount, note) VALUES (?, 'order', ?, ?)")
     .bind(user.id, -charge, `Order #${orderId}: ${service.name}`).run();
@@ -204,126 +213,7 @@ async function createOrder(db, user, servicePublicId, link, quantity, source) {
 
   const order = await db.prepare("SELECT * FROM orders WHERE id = ?").bind(orderId).first();
   const updatedUser = await db.prepare("SELECT * FROM users WHERE id = ?").bind(user.id).first();
-  return { order, balance: updatedUser.balance, service, beforeBalance, afterBalance: updatedUser.balance, telegramId: user.telegram_id, username: updatedUser.username };
-}
-
-// ---------- Force-join verification ----------
-async function checkChannelMembership(botToken, username, telegramId) {
-  try {
-    const url = `https://api.telegram.org/bot${botToken}/getChatMember?chat_id=@${encodeURIComponent(username)}&user_id=${telegramId}`;
-    const res = await fetch(url);
-    const data = await res.json();
-    if (!data.ok) return false;
-    const status = data.result && data.result.status;
-    return ["member", "administrator", "creator"].includes(status);
-  } catch { return false; }
-}
-
-// ---------- Telegram send helpers (order log only) ----------
-function inlineButton(buttonText, buttonUrl, asUrlButton) {
-  if (!buttonText || !buttonUrl) return null;
-  return asUrlButton ? { text: buttonText, url: buttonUrl } : { text: buttonText, web_app: { url: buttonUrl } };
-}
-async function tgSendMessage(botToken, chatId, text, buttonText, buttonUrl, asUrlButton) {
-  const body = { chat_id: chatId, text, parse_mode: "HTML" };
-  const btn = inlineButton(buttonText, buttonUrl, asUrlButton);
-  if (btn) body.reply_markup = { inline_keyboard: [[btn]] };
-  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-  });
-  return res.json();
-}
-async function tgSendPhoto(botToken, chatId, photoUrl, caption, buttonText, buttonUrl, asUrlButton) {
-  const body = { chat_id: chatId, photo: photoUrl, parse_mode: "HTML" };
-  if (caption) body.caption = caption;
-  const btn = inlineButton(buttonText, buttonUrl, asUrlButton);
-  if (btn) body.reply_markup = { inline_keyboard: [[btn]] };
-  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-  });
-  return res.json();
-}
-
-// ---------- Per-order channel log ----------
-function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
-function statusEmoji(status) {
-  const s = (status || "").toLowerCase();
-  if (s.includes("complet")) return "✅";
-  if (s.includes("partial")) return "🟡";
-  if (s.includes("cancel")) return "❌";
-  if (s.includes("process")) return "🟢";
-  return "⏳";
-}
-async function sendOrderLog(db, env, result) {
-  const enabled = (await getSetting(db, "order_log_enabled")) === "1";
-  if (!enabled) return;
-  const channel = await getSetting(db, "order_log_channel");
-  const botToken = (await getSetting(db, "bot_token")) || env.BOT_TOKEN;
-  if (!channel || !botToken) return;
-
-  const { order, service, beforeBalance, afterBalance, telegramId, username } = result;
-  const siteName = ((await getSetting(db, "site_name")) || "Your SMM API Center").toUpperCase();
-  const now = new Date();
-  const refillLine = service.refill_days > 0 ? `✅ ${service.refill_days} Days` : "❌ No Refill";
-  const currencySymbol = (await getSetting(db, "currency_symbol")) || "৳";
-
-  const caption =
-`╔══════════════════════════════╗
-🚀  ${siteName} • O R D E R  L O G
-╚══════════════════════════════╝
-
-👤 CUSTOMER INFORMATION
-┣ 👤 Username      ➜ @${esc(username || "N/A")}
-┣ 🆔 User ID       ➜ ${esc(telegramId)}
-┗ 💰 Balance       ➜ ${currencySymbol}${afterBalance.toFixed(2)}
-
-📦 ORDER DETAILS
-┣ 🧾 Order ID      ➜ #${order.id}
-┣ 🛒 Service       ➜ ${esc(service.name)}
-┣ 🔢 Service ID    ➜ ${service.public_id}
-┣ 📈 Quantity      ➜ ${order.quantity}
-┣ 💸 Charge        ➜ ${currencySymbol}${order.charge.toFixed(2)}
-┗ 🟢 Status        ➜ ${statusEmoji(order.status)} ${esc(order.status)}
-
-🎯 TARGET LINK
-┗ 🔗 ${esc(order.link)}
-
-📊 ORDER PROGRESS
-┣ 🚀 Start Count   ➜ -
-┣ 📈 Current       ➜ -
-┣ 📉 Remains       ➜ -
-┗ 🔄 Refill        ➜ ${refillLine}
-
-💳 PAYMENT DETAILS
-┣ 💎 Method        ➜ Wallet
-┣ 📥 Before        ➜ ${currencySymbol}${beforeBalance.toFixed(2)}
-┗ 📤 After         ➜ ${currencySymbol}${afterBalance.toFixed(2)}
-
-🕒 TIMELINE
-┣ 📅 Date          ➜ ${now.toISOString().slice(0, 10)}
-┣ ⏰ Time          ➜ ${now.toISOString().slice(11, 19)} UTC
-┗ ✅ Completed     ➜ -
-
-╭──────────────────────────────╮
-🤖 Powered by ${siteName}
-⚡ Fast • 🔒 Secure • 🚀 Reliable
-💙 Thank you for choosing us!
-╰──────────────────────────────╯`;
-
-  const imageUrl = await getSetting(db, "order_log_image_url");
-  const buttonText = (await getSetting(db, "order_log_button_text")) || "🎯 Grab Your Chance";
-  const botUsername = await getSetting(db, "bot_username");
-  const appUrl = botUsername ? `https://t.me/${botUsername}?startapp=log` : (env.APP_URL || "");
-  try {
-    if (imageUrl && caption.length <= 1024) {
-      await tgSendPhoto(botToken, channel, imageUrl, caption, buttonText, appUrl, true);
-    } else if (imageUrl) {
-      await tgSendPhoto(botToken, channel, imageUrl, null, null, null, true);
-      await tgSendMessage(botToken, channel, caption, buttonText, appUrl, true);
-    } else {
-      await tgSendMessage(botToken, channel, caption, buttonText, appUrl, true);
-    }
-  } catch { /* best-effort — never block the order on a logging failure */ }
+  return { order, balance: updatedUser.balance };
 }
 
 // ================= ROUTER =================
@@ -396,14 +286,8 @@ async function handleApi(request, env, url, pathname, ctx) {
       ok: true,
       settings: {
         site_name: s.site_name, currency: s.currency, currency_symbol: s.currency_symbol,
-        bot_username: s.bot_username, channel_link: s.channel_link, support_link: s.support_link,
-        force_join_enabled: s.force_join_enabled === "1",
-        deposit_plans: [
-          { amount: Number(s.deposit_plan_1_amount), bonus: Number(s.deposit_plan_1_bonus) },
-          { amount: Number(s.deposit_plan_2_amount), bonus: Number(s.deposit_plan_2_bonus) },
-          { amount: Number(s.deposit_plan_3_amount), bonus: Number(s.deposit_plan_3_bonus) },
-        ],
-        payment_instructions: s.payment_instructions,
+        support_link: s.support_link, channel_link: s.channel_link,
+        deposit_quick_amounts: (s.deposit_quick_amounts || "").split(",").map((n) => Number(n.trim())).filter((n) => n > 0),
       },
     });
   }
@@ -440,7 +324,7 @@ async function handleApi(request, env, url, pathname, ctx) {
     const user = await db.prepare("SELECT id FROM users WHERE telegram_id = ?").bind(tid).first();
     if (!user) return json({ ok: true, stats: { total_orders: 0, total_spent: 0, total_earned: 0 } });
     const orders = await db.prepare("SELECT COUNT(*) AS c, COALESCE(SUM(charge),0) AS s FROM orders WHERE user_id = ? AND status != 'Cancelled'").bind(user.id).first();
-    const earned = await db.prepare("SELECT COALESCE(SUM(amount),0) AS s FROM transactions WHERE user_id = ? AND type IN ('admin_add','promo','deposit')").bind(user.id).first();
+    const earned = await db.prepare("SELECT COALESCE(SUM(amount),0) AS s FROM transactions WHERE user_id = ? AND type IN ('admin_add','deposit')").bind(user.id).first();
     return json({ ok: true, stats: { total_orders: orders.c, total_spent: orders.s, total_earned: earned.s } });
   }
 
@@ -461,8 +345,17 @@ async function handleApi(request, env, url, pathname, ctx) {
     return json({ ok: true });
   }
 
+  if (pathname === "/api/platforms" && method === "GET") {
+    const { results } = await db.prepare("SELECT * FROM platforms WHERE status = 'active' ORDER BY sort_order ASC, id ASC").all();
+    return json({ ok: true, platforms: results });
+  }
+
   if (pathname === "/api/categories" && method === "GET") {
-    const { results } = await db.prepare("SELECT * FROM categories WHERE status = 'active' ORDER BY sort_order ASC, id ASC").all();
+    const platformId = url.searchParams.get("platform_id");
+    const stmt = platformId
+      ? db.prepare("SELECT * FROM categories WHERE status = 'active' AND platform_id = ? ORDER BY sort_order ASC, id ASC").bind(platformId)
+      : db.prepare("SELECT * FROM categories WHERE status = 'active' ORDER BY sort_order ASC, id ASC");
+    const { results } = await stmt.all();
     return json({ ok: true, categories: results });
   }
 
@@ -485,7 +378,6 @@ async function handleApi(request, env, url, pathname, ctx) {
     if (user.banned) return err("Account suspended", 403);
     const result = await createOrder(db, user, servicePublicId, link, quantity, "app");
     if (result.error) return err(result.error, result.error === "Insufficient balance" ? 402 : 400);
-    ctx.waitUntil(sendOrderLog(db, env, result));
     return json({ ok: true, order: result.order, balance: result.balance });
   }
 
@@ -526,60 +418,45 @@ async function handleApi(request, env, url, pathname, ctx) {
     return json({ ok: true, transactions: results });
   }
 
-  // ---------- Promo codes ----------
-  if (pathname === "/api/promo/redeem" && method === "POST") {
+  // ---------- Deposits (Add Funds) ----------
+  if (pathname === "/api/deposit/methods" && method === "GET") {
+    const { results } = await db.prepare("SELECT * FROM payment_methods WHERE status = 'active' ORDER BY sort_order ASC, id ASC").all();
+    return json({ ok: true, methods: results });
+  }
+
+  if (pathname === "/api/deposit/request" && method === "POST") {
     const body = await request.json().catch(() => ({}));
-    if (!body.telegram_id || !body.code) return err("telegram_id and code required");
+    if (!body.telegram_id || !body.method_id || !body.amount) return err("telegram_id, method_id and amount required");
+    const amount = parseFloat(body.amount);
+    if (!Number.isFinite(amount) || amount <= 0) return err("Enter a valid amount");
     const user = await db.prepare("SELECT * FROM users WHERE telegram_id = ?").bind(body.telegram_id).first();
     if (!user) return err("User not found", 404);
     if (user.banned) return err("Account suspended", 403);
+    const method = await db.prepare("SELECT * FROM payment_methods WHERE id = ? AND status = 'active'").bind(body.method_id).first();
+    if (!method) return err("Payment method not found", 404);
 
-    const promo = await db.prepare("SELECT * FROM promo_codes WHERE code = ? COLLATE NOCASE AND status = 'active'").bind(body.code.trim()).first();
-    if (!promo) return err("Invalid or expired promo code", 404);
-    if (promo.claimed_count >= promo.max_claims) return err("This promo code has reached its claim limit", 410);
+    let refCode, tries = 0;
+    do { refCode = genRefCode(); tries++; } while (tries < 5 && await db.prepare("SELECT id FROM deposit_requests WHERE reference_code = ?").bind(refCode).first());
 
-    const already = await db.prepare("SELECT id FROM promo_claims WHERE promo_id = ? AND user_id = ?").bind(promo.id, user.id).first();
-    if (already) return err("You've already claimed this promo code", 409);
+    const insert = await db.prepare(
+      "INSERT INTO deposit_requests (user_id, method_id, method_name, amount, reference_code, status) VALUES (?, ?, ?, ?, ?, 'Pending')"
+    ).bind(user.id, method.id, method.name, amount, refCode).run();
 
-    await db.prepare("INSERT INTO promo_claims (promo_id, user_id) VALUES (?, ?)").bind(promo.id, user.id).run();
-    await db.prepare("UPDATE promo_codes SET claimed_count = claimed_count + 1 WHERE id = ?").bind(promo.id).run();
-    await db.prepare("UPDATE users SET balance = balance + ? WHERE id = ?").bind(promo.reward, user.id).run();
-    await db.prepare("INSERT INTO transactions (user_id, type, amount, note) VALUES (?, 'promo', ?, ?)")
-      .bind(user.id, promo.reward, `Promo code ${promo.code}`).run();
-
-    const updated = await db.prepare("SELECT * FROM users WHERE id = ?").bind(user.id).first();
-    return json({ ok: true, reward: promo.reward, balance: updated.balance });
+    const request_row = await db.prepare("SELECT * FROM deposit_requests WHERE id = ?").bind(insert.meta.last_row_id).first();
+    return json({ ok: true, request: request_row, method });
   }
 
-  // ---------- Force join ----------
-  if (pathname === "/api/force-join" && method === "GET") {
-    const enabled = (await getSetting(db, "force_join_enabled")) === "1";
-    if (!enabled) return json({ ok: true, enabled: false, channels: [] });
-    const { results } = await db.prepare("SELECT id, title, username, invite_link, icon FROM force_join_channels WHERE status = 'active' ORDER BY sort_order ASC, id ASC").all();
-    return json({ ok: true, enabled: true, channels: results });
-  }
-
-  if (pathname === "/api/verify-join" && method === "POST") {
-    const body = await request.json().catch(() => ({}));
-    if (!body.telegram_id) return err("telegram_id required");
-    const enabled = (await getSetting(db, "force_join_enabled")) === "1";
-    if (!enabled) return json({ ok: true, joined: true, missing: [] });
-
-    const botToken = (await getSetting(db, "bot_token")) || env.BOT_TOKEN;
-    const { results: channels } = await db.prepare("SELECT * FROM force_join_channels WHERE status = 'active' ORDER BY sort_order ASC, id ASC").all();
-    if (!channels.length) return json({ ok: true, joined: true, missing: [] });
-    if (!botToken) return json({ ok: true, joined: true, missing: [] });
-
-    const missing = [];
-    for (const ch of channels) {
-      const isMember = await checkChannelMembership(botToken, ch.username, body.telegram_id);
-      if (!isMember) missing.push({ id: ch.id, title: ch.title, username: ch.username });
-    }
-    return json({ ok: true, joined: missing.length === 0, missing });
+  if (pathname === "/api/deposit/requests" && method === "GET") {
+    const tid = url.searchParams.get("telegram_id");
+    if (!tid) return err("telegram_id required");
+    const user = await db.prepare("SELECT id FROM users WHERE telegram_id = ?").bind(tid).first();
+    if (!user) return json({ ok: true, requests: [] });
+    const { results } = await db.prepare("SELECT * FROM deposit_requests WHERE user_id = ? ORDER BY created_at DESC LIMIT 50").bind(user.id).all();
+    return json({ ok: true, requests: results });
   }
 
   // ---------- Reseller / child API ----------
-  if (pathname === "/api/v2" && method === "POST") return handleResellerApi(db, env, request, ctx);
+  if (pathname === "/api/v2" && method === "POST") return handleResellerApi(db, request);
 
   // ---------- Admin ----------
   if (pathname === "/api/admin/login" && method === "POST") {
@@ -598,7 +475,7 @@ async function handleApi(request, env, url, pathname, ctx) {
 }
 
 // ---------- Reseller API ----------
-async function handleResellerApi(db, env, request, ctx) {
+async function handleResellerApi(db, request) {
   const contentType = request.headers.get("content-type") || "";
   let params = {};
   try {
@@ -614,11 +491,12 @@ async function handleResellerApi(db, env, request, ctx) {
 
   if (action === "services") {
     const { results } = await db.prepare(
-      `SELECT s.public_id AS service, s.name, c.name AS category, s.rate, s.min_qty AS min, s.max_qty AS max, s.refill_days
-       FROM services s JOIN categories c ON c.id = s.category_id WHERE s.status = 'active' ORDER BY s.public_id ASC`
+      `SELECT s.public_id AS service, s.name, c.name AS category, p.name AS platform, s.rate, s.min_qty AS min, s.max_qty AS max, s.refill_days
+       FROM services s JOIN categories c ON c.id = s.category_id JOIN platforms p ON p.id = c.platform_id
+       WHERE s.status = 'active' ORDER BY s.public_id ASC`
     ).all();
     return json(results.map((r) => ({
-      service: r.service, name: r.name, type: "Default", category: r.category,
+      service: r.service, name: r.name, type: "Default", category: r.category, platform: r.platform,
       rate: String(r.rate), min: String(r.min), max: String(r.max),
       refill: r.refill_days > 0, cancel: true,
     })));
@@ -632,7 +510,6 @@ async function handleResellerApi(db, env, request, ctx) {
   if (action === "add") {
     const result = await createOrder(db, user, params.service, params.link, params.quantity, "api");
     if (result.error) return json({ error: result.error });
-    ctx.waitUntil(sendOrderLog(db, env, result));
     return json({ order: result.order.id });
   }
 
@@ -737,26 +614,56 @@ async function handleAdmin(db, env, method, pathname, request, url) {
     const pending = await db.prepare("SELECT COUNT(*) AS c FROM orders WHERE status IN ('Pending','Processing')").first();
     const revenue = await db.prepare("SELECT COALESCE(SUM(charge),0) AS s FROM orders WHERE status != 'Cancelled'").first();
     const balances = await db.prepare("SELECT COALESCE(SUM(balance),0) AS s FROM users").first();
-    return json({ ok: true, stats: { total_users: users.c, total_orders: orders.c, pending_orders: pending.c, total_revenue: revenue.s, total_user_balance: balances.s } });
+    const pendingDeposits = await db.prepare("SELECT COUNT(*) AS c FROM deposit_requests WHERE status = 'Pending'").first();
+    return json({ ok: true, stats: { total_users: users.c, total_orders: orders.c, pending_orders: pending.c, total_revenue: revenue.s, total_user_balance: balances.s, pending_deposits: pendingDeposits.c } });
+  }
+
+  // ---- platforms ----
+  if (pathname === "/api/admin/platforms" && method === "GET") {
+    const { results } = await db.prepare("SELECT * FROM platforms ORDER BY sort_order ASC, id ASC").all();
+    return json({ ok: true, platforms: results });
+  }
+  if (pathname === "/api/admin/platforms" && method === "POST") {
+    const b = await request.json().catch(() => ({}));
+    if (!b.name) return err("name required");
+    const res = await db.prepare("INSERT INTO platforms (name, icon, sort_order, status) VALUES (?, ?, ?, ?)")
+      .bind(b.name, b.icon || "fa-solid fa-star", b.sort_order || 0, b.status || "active").run();
+    return json({ ok: true, id: res.meta.last_row_id });
+  }
+  let m = pathname.match(/^\/api\/admin\/platforms\/(\d+)$/);
+  if (m && method === "PUT") {
+    const b = await request.json().catch(() => ({}));
+    await db.prepare("UPDATE platforms SET name = ?, icon = ?, sort_order = ?, status = ? WHERE id = ?")
+      .bind(b.name, b.icon, b.sort_order ?? 0, b.status || "active", m[1]).run();
+    return json({ ok: true });
+  }
+  if (m && method === "DELETE") {
+    const cats = await db.prepare("SELECT id FROM categories WHERE platform_id = ?").bind(m[1]).all();
+    for (const c of cats.results) await db.prepare("DELETE FROM services WHERE category_id = ?").bind(c.id).run();
+    await db.prepare("DELETE FROM categories WHERE platform_id = ?").bind(m[1]).run();
+    await db.prepare("DELETE FROM platforms WHERE id = ?").bind(m[1]).run();
+    return json({ ok: true });
   }
 
   // ---- categories ----
   if (pathname === "/api/admin/categories" && method === "GET") {
-    const { results } = await db.prepare("SELECT * FROM categories ORDER BY sort_order ASC, id ASC").all();
+    const { results } = await db.prepare(
+      "SELECT c.*, p.name AS platform_name FROM categories c JOIN platforms p ON p.id = c.platform_id ORDER BY c.sort_order ASC, c.id ASC"
+    ).all();
     return json({ ok: true, categories: results });
   }
   if (pathname === "/api/admin/categories" && method === "POST") {
     const b = await request.json().catch(() => ({}));
-    if (!b.name) return err("name required");
-    const res = await db.prepare("INSERT INTO categories (name, icon, sort_order, status) VALUES (?, ?, ?, ?)")
-      .bind(b.name, b.icon || "fa-solid fa-layer-group", b.sort_order || 0, b.status || "active").run();
+    if (!b.name || !b.platform_id) return err("name and platform_id required");
+    const res = await db.prepare("INSERT INTO categories (platform_id, name, icon, tag, sort_order, status) VALUES (?, ?, ?, ?, ?, ?)")
+      .bind(b.platform_id, b.name, b.icon || null, b.tag || null, b.sort_order || 0, b.status || "active").run();
     return json({ ok: true, id: res.meta.last_row_id });
   }
-  let m = pathname.match(/^\/api\/admin\/categories\/(\d+)$/);
+  m = pathname.match(/^\/api\/admin\/categories\/(\d+)$/);
   if (m && method === "PUT") {
     const b = await request.json().catch(() => ({}));
-    await db.prepare("UPDATE categories SET name = ?, icon = ?, sort_order = ?, status = ? WHERE id = ?")
-      .bind(b.name, b.icon, b.sort_order ?? 0, b.status || "active", m[1]).run();
+    await db.prepare("UPDATE categories SET platform_id = ?, name = ?, icon = ?, tag = ?, sort_order = ?, status = ? WHERE id = ?")
+      .bind(b.platform_id, b.name, b.icon || null, b.tag || null, b.sort_order ?? 0, b.status || "active", m[1]).run();
     return json({ ok: true });
   }
   if (m && method === "DELETE") {
@@ -767,7 +674,11 @@ async function handleAdmin(db, env, method, pathname, request, url) {
 
   // ---- services ----
   if (pathname === "/api/admin/services" && method === "GET") {
-    const { results } = await db.prepare(`SELECT s.*, c.name AS category_name FROM services s JOIN categories c ON c.id = s.category_id ORDER BY s.sort_order ASC, s.id ASC`).all();
+    const { results } = await db.prepare(
+      `SELECT s.*, c.name AS category_name, p.name AS platform_name
+       FROM services s JOIN categories c ON c.id = s.category_id JOIN platforms p ON p.id = c.platform_id
+       ORDER BY s.sort_order ASC, s.id ASC`
+    ).all();
     return json({ ok: true, services: results });
   }
   if (pathname === "/api/admin/services" && method === "POST") {
@@ -907,55 +818,59 @@ async function handleAdmin(db, env, method, pathname, request, url) {
     const user = await db.prepare("SELECT * FROM users WHERE id = ?").bind(m[1]).first();
     if (!user) return err("User not found", 404);
     const orderStats = await db.prepare("SELECT COUNT(*) AS c, COALESCE(SUM(charge),0) AS s FROM orders WHERE user_id = ? AND status != 'Cancelled'").bind(m[1]).first();
-    const earned = await db.prepare("SELECT COALESCE(SUM(amount),0) AS s FROM transactions WHERE user_id = ? AND type IN ('admin_add','promo','deposit')").bind(m[1]).first();
+    const earned = await db.prepare("SELECT COALESCE(SUM(amount),0) AS s FROM transactions WHERE user_id = ? AND type IN ('admin_add','deposit')").bind(m[1]).first();
     const { results: recentOrders } = await db.prepare("SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT 15").bind(m[1]).all();
     const { results: recentTxns } = await db.prepare("SELECT * FROM transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT 15").bind(m[1]).all();
     return json({ ok: true, user, stats: { total_orders: orderStats.c, total_spent: orderStats.s, total_earned: earned.s }, recentOrders, recentTxns });
   }
 
-  // ---- force-join channels ----
-  if (pathname === "/api/admin/force-join" && method === "GET") {
-    const { results } = await db.prepare("SELECT * FROM force_join_channels ORDER BY sort_order ASC, id ASC").all();
-    return json({ ok: true, channels: results });
+  // ---- payment methods ----
+  if (pathname === "/api/admin/payment-methods" && method === "GET") {
+    const { results } = await db.prepare("SELECT * FROM payment_methods ORDER BY sort_order ASC, id ASC").all();
+    return json({ ok: true, methods: results });
   }
-  if (pathname === "/api/admin/force-join" && method === "POST") {
+  if (pathname === "/api/admin/payment-methods" && method === "POST") {
     const b = await request.json().catch(() => ({}));
-    if (!b.title || !b.username) return err("title and username required");
-    const res = await db.prepare("INSERT INTO force_join_channels (title, username, invite_link, icon, sort_order, status) VALUES (?, ?, ?, ?, ?, ?)")
-      .bind(b.title, b.username.replace(/^@/, ""), b.invite_link || null, b.icon || "fa-brands fa-telegram", b.sort_order || 0, b.status || "active").run();
+    if (!b.name) return err("name required");
+    const res = await db.prepare("INSERT INTO payment_methods (name, icon, account_info, instructions, sort_order, status) VALUES (?, ?, ?, ?, ?, ?)")
+      .bind(b.name, b.icon || "fa-solid fa-wallet", b.account_info || null, b.instructions || null, b.sort_order || 0, b.status || "active").run();
     return json({ ok: true, id: res.meta.last_row_id });
   }
-  m = pathname.match(/^\/api\/admin\/force-join\/(\d+)$/);
+  m = pathname.match(/^\/api\/admin\/payment-methods\/(\d+)$/);
   if (m && method === "PUT") {
     const b = await request.json().catch(() => ({}));
-    await db.prepare("UPDATE force_join_channels SET title=?, username=?, invite_link=?, icon=?, sort_order=?, status=? WHERE id=?")
-      .bind(b.title, (b.username || "").replace(/^@/, ""), b.invite_link || null, b.icon || "fa-brands fa-telegram", b.sort_order ?? 0, b.status || "active", m[1]).run();
+    await db.prepare("UPDATE payment_methods SET name=?, icon=?, account_info=?, instructions=?, sort_order=?, status=? WHERE id=?")
+      .bind(b.name, b.icon || "fa-solid fa-wallet", b.account_info || null, b.instructions || null, b.sort_order ?? 0, b.status || "active", m[1]).run();
     return json({ ok: true });
   }
-  if (m && method === "DELETE") { await db.prepare("DELETE FROM force_join_channels WHERE id = ?").bind(m[1]).run(); return json({ ok: true }); }
+  if (m && method === "DELETE") { await db.prepare("DELETE FROM payment_methods WHERE id = ?").bind(m[1]).run(); return json({ ok: true }); }
 
-  // ---- promo codes ----
-  if (pathname === "/api/admin/promo" && method === "GET") {
-    const { results } = await db.prepare("SELECT * FROM promo_codes ORDER BY created_at DESC").all();
-    return json({ ok: true, codes: results });
+  // ---- deposits ----
+  if (pathname === "/api/admin/deposits" && method === "GET") {
+    const status = url.searchParams.get("status");
+    const stmt = status
+      ? db.prepare("SELECT d.*, u.telegram_id, u.username, u.first_name FROM deposit_requests d JOIN users u ON u.id = d.user_id WHERE d.status = ? ORDER BY d.created_at DESC LIMIT 300").bind(status)
+      : db.prepare("SELECT d.*, u.telegram_id, u.username, u.first_name FROM deposit_requests d JOIN users u ON u.id = d.user_id ORDER BY d.created_at DESC LIMIT 300");
+    const { results } = await stmt.all();
+    return json({ ok: true, deposits: results });
   }
-  if (pathname === "/api/admin/promo" && method === "POST") {
-    const b = await request.json().catch(() => ({}));
-    if (!b.code || !b.reward) return err("code and reward required");
-    try {
-      const res = await db.prepare("INSERT INTO promo_codes (code, reward, max_claims, status) VALUES (?, ?, ?, ?)")
-        .bind(b.code.trim().toUpperCase(), b.reward, b.max_claims || 100, b.status || "active").run();
-      return json({ ok: true, id: res.meta.last_row_id });
-    } catch (e) { return err("That code already exists"); }
-  }
-  m = pathname.match(/^\/api\/admin\/promo\/(\d+)$/);
+  m = pathname.match(/^\/api\/admin\/deposits\/(\d+)$/);
   if (m && method === "PUT") {
     const b = await request.json().catch(() => ({}));
-    await db.prepare("UPDATE promo_codes SET code=?, reward=?, max_claims=?, status=? WHERE id=?")
-      .bind(b.code.trim().toUpperCase(), b.reward, b.max_claims || 100, b.status || "active", m[1]).run();
+    const allowed = ["Pending", "Approved", "Rejected"];
+    if (!allowed.includes(b.status)) return err("Invalid status");
+    const dep = await db.prepare("SELECT * FROM deposit_requests WHERE id = ?").bind(m[1]).first();
+    if (!dep) return err("Deposit request not found", 404);
+    if (dep.status !== "Pending") return err(`This request was already ${dep.status.toLowerCase()}`);
+    if (b.status === "Approved") {
+      await db.prepare("UPDATE users SET balance = balance + ? WHERE id = ?").bind(dep.amount, dep.user_id).run();
+      await db.prepare("INSERT INTO transactions (user_id, type, amount, note) VALUES (?, 'deposit', ?, ?)")
+        .bind(dep.user_id, dep.amount, `Deposit ${dep.reference_code} via ${dep.method_name}`).run();
+    }
+    await db.prepare("UPDATE deposit_requests SET status = ?, admin_note = ?, updated_at = datetime('now') WHERE id = ?")
+      .bind(b.status, b.admin_note || null, m[1]).run();
     return json({ ok: true });
   }
-  if (m && method === "DELETE") { await db.prepare("DELETE FROM promo_codes WHERE id = ?").bind(m[1]).run(); return json({ ok: true }); }
 
   // ---- settings ----
   if (pathname === "/api/admin/settings" && method === "GET") return json({ ok: true, settings: await getSettings(db) });
