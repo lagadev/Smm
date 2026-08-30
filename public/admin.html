@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SMM API Center — Admin</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="assets/css/style.css?v=8">
+</head>
+<body class="admin-body">
+
+<!-- ===== Login ===== -->
+<div id="admin-login">
+  <div class="login-card">
+    <div class="brand-mark" style="margin:0 auto 16px;">TG</div>
+    <h2>Admin Login</h2>
+    <p>Enter your admin password to continue.</p>
+    <input class="field" type="password" id="login-password" placeholder="Admin password">
+    <button class="btn btn-primary btn-block" id="login-button"><span class="button-text">Login</span><div class="spinner hidden"></div></button>
+    <div id="login-error">Incorrect password. Please try again.</div>
+  </div>
+</div>
+
+<!-- ===== Shell ===== -->
+<div class="admin-shell hidden" id="admin-shell">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand"><div class="brand-mark">TG</div></div>
+    <button class="side-link active" data-tab="dashboard"><i class="fa-solid fa-gauge"></i> Dashboard</button>
+    <button class="side-link" data-tab="platforms"><i class="fa-solid fa-shapes"></i> Platforms</button>
+    <button class="side-link" data-tab="categories"><i class="fa-solid fa-layer-group"></i> Categories</button>
+    <button class="side-link" data-tab="services"><i class="fa-solid fa-list-check"></i> Services</button>
+    <button class="side-link" data-tab="orders"><i class="fa-solid fa-bag-shopping"></i> Orders</button>
+    <button class="side-link" data-tab="users"><i class="fa-solid fa-users"></i> Users</button>
+    <button class="side-link" data-tab="methods"><i class="fa-solid fa-money-check-dollar"></i> Payment Methods</button>
+    <button class="side-link" data-tab="deposits"><i class="fa-solid fa-sack-dollar"></i> Deposits</button>
+    <button class="side-link" data-tab="settings"><i class="fa-solid fa-gear"></i> Settings</button>
+    <button class="side-link logout" id="logout-button"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</button>
+  </aside>
+
+  <main class="admin-main">
+    <div class="admin-header">
+      <div>
+        <h1 id="page-title">Dashboard</h1>
+        <p id="page-sub">Overview of your panel</p>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="menu-toggle"><i class="fa-solid fa-bars"></i></button>
+    </div>
+
+    <!-- Dashboard -->
+    <section class="admin-tab active" id="tab-dashboard">
+      <div class="stat-cards">
+        <div class="stat-card"><div class="label">Total Users</div><div class="value" id="stat-users">0</div></div>
+        <div class="stat-card"><div class="label">Total Orders</div><div class="value" id="stat-orders">0</div></div>
+        <div class="stat-card"><div class="label">Pending Orders</div><div class="value" id="stat-pending">0</div></div>
+        <div class="stat-card"><div class="label">Total Revenue</div><div class="value" id="stat-revenue">৳0</div></div>
+        <div class="stat-card"><div class="label">User Balances (Liability)</div><div class="value" id="stat-liability">৳0</div></div>
+        <div class="stat-card"><div class="label">Pending Deposits</div><div class="value" id="stat-pending-deposits">0</div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>Recent Orders</h3><button class="btn btn-sm btn-outline" data-tab-link="orders">View all</button></div>
+        <div class="table-wrap"><table class="admin-table" id="recent-orders-table"><thead><tr><th>ID</th><th>User</th><th>Service</th><th>Charge</th><th>Status</th><th>Date</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- Platforms -->
+    <section class="admin-tab" id="tab-platforms">
+      <div class="panel">
+        <div class="panel-head"><h3>Platforms</h3><button class="btn btn-primary btn-sm" id="add-platform-btn"><i class="fa-solid fa-plus"></i> Add Platform</button></div>
+        <p class="card-sub" style="margin-top:-6px;">These render as the icon grid at the top of "New Order" in the Mini App (e.g. TikTok, Instagram, Facebook…). Icon = any Font Awesome class.</p>
+        <div class="table-wrap"><table class="admin-table" id="platforms-table"><thead><tr><th>#</th><th>Icon</th><th>Name</th><th>Order</th><th>Status</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- Categories -->
+    <section class="admin-tab" id="tab-categories">
+      <div class="panel">
+        <div class="panel-head"><h3>Categories</h3><button class="btn btn-primary btn-sm" id="add-category-btn"><i class="fa-solid fa-plus"></i> Add Category</button></div>
+        <p class="card-sub" style="margin-top:-6px;">Each category belongs to a Platform, e.g. Platform "TikTok" → Category "TikTok - Likes [ USA 🇺🇸 - Low Drop ]". The optional Tag shows as a small pill (e.g. "NEW").</p>
+        <div class="table-wrap"><table class="admin-table" id="categories-table"><thead><tr><th>#</th><th>Platform</th><th>Name</th><th>Tag</th><th>Order</th><th>Status</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- Services -->
+    <section class="admin-tab" id="tab-services">
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Services</h3>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-outline btn-sm" id="reapply-markup-btn"><i class="fa-solid fa-percent"></i> Reapply Markup</button>
+            <button class="btn btn-primary btn-sm" id="add-service-btn"><i class="fa-solid fa-plus"></i> Add Service</button>
+          </div>
+        </div>
+        <p class="card-sub" style="margin-top:-6px;">Set Cost Rate + Markup % and the sell Rate is calculated for you. "Reapply Markup" recomputes every service's rate.</p>
+        <div class="table-wrap"><table class="admin-table" id="services-table"><thead><tr><th>ID</th><th>Platform</th><th>Category</th><th>Name</th><th>Cost</th><th>Markup</th><th>Sell Rate/1000</th><th>Refill</th><th>Status</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- Orders -->
+    <section class="admin-tab" id="tab-orders">
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Orders</h3>
+          <input class="field search-input" id="order-search" placeholder="Search order ID / service / link">
+        </div>
+        <div class="pill-row" id="order-status-pills">
+          <button class="pill active" data-status=""><i class="fa-solid fa-list"></i> All</button>
+          <button class="pill" data-status="Pending"><i class="fa-solid fa-clock"></i> Pending</button>
+          <button class="pill" data-status="Processing"><i class="fa-solid fa-gauge-high"></i> Processing</button>
+          <button class="pill" data-status="Completed"><i class="fa-solid fa-check"></i> Completed</button>
+          <button class="pill" data-status="Partial"><i class="fa-solid fa-circle-half-stroke"></i> Partial</button>
+          <button class="pill" data-status="Cancelled"><i class="fa-solid fa-xmark"></i> Cancelled</button>
+        </div>
+        <div class="table-wrap"><table class="admin-table" id="orders-table"><thead><tr><th>ID</th><th>Date</th><th>Link</th><th>Charge</th><th>Start Count</th><th>Quantity</th><th>Service</th><th>Remains</th><th>Status</th><th>Quick Actions</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- Users -->
+    <section class="admin-tab" id="tab-users">
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Users</h3>
+          <input class="field search-input" id="user-search" placeholder="Search name / username / ID">
+        </div>
+        <div class="table-wrap"><table class="admin-table" id="users-table"><thead><tr><th>ID</th><th>Name</th><th>Username</th><th>Telegram ID</th><th>Balance</th><th>Status</th><th>Joined</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- Payment Methods -->
+    <section class="admin-tab" id="tab-methods">
+      <div class="panel">
+        <div class="panel-head"><h3>Payment Methods</h3><button class="btn btn-primary btn-sm" id="add-method-btn"><i class="fa-solid fa-plus"></i> Add Method</button></div>
+        <p class="card-sub" style="margin-top:-6px;">Shown as tappable cards in the Mini App's Add Funds flow. Account Info is what the user should send to (number / wallet address). Instructions show under the reference code.</p>
+        <div class="table-wrap"><table class="admin-table" id="methods-table"><thead><tr><th>#</th><th>Icon</th><th>Name</th><th>Order</th><th>Status</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- Deposits -->
+    <section class="admin-tab" id="tab-deposits">
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Deposit Requests</h3>
+          <input class="field search-input" id="deposit-search" placeholder="Search reference / user">
+        </div>
+        <div class="pill-row" id="deposit-status-pills">
+          <button class="pill active" data-status=""><i class="fa-solid fa-list"></i> All</button>
+          <button class="pill" data-status="Pending"><i class="fa-solid fa-clock"></i> Pending</button>
+          <button class="pill" data-status="Approved"><i class="fa-solid fa-check"></i> Approved</button>
+          <button class="pill" data-status="Rejected"><i class="fa-solid fa-xmark"></i> Rejected</button>
+        </div>
+        <p class="card-sub" style="margin-top:-6px;">Approving credits the user's wallet automatically and can't be undone from here — reject instead if it was a mistake.</p>
+        <div class="table-wrap"><table class="admin-table" id="deposits-table"><thead><tr><th>Ref Code</th><th>User</th><th>Method</th><th>Amount</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- Settings -->
+    <section class="admin-tab" id="tab-settings">
+      <div class="panel">
+        <h3 style="margin-top:0;">General</h3>
+        <div class="form-grid">
+          <div><label>Site Name</label><input class="field" id="set-site_name"></div>
+          <div><label>Currency Symbol</label><input class="field" id="set-currency_symbol"></div>
+          <div><label>Currency Code</label><input class="field" id="set-currency" placeholder="BDT"></div>
+          <div><label>Bot Token (used only to verify Telegram login)</label><input class="field" id="set-bot_token" type="password"></div>
+          <div><label>Update Channel Link</label><input class="field" id="set-channel_link"></div>
+          <div><label>Support Contact Link</label><input class="field" id="set-support_link"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3 style="margin:0;">Profit Markup</h3></div>
+        <p class="card-sub" style="margin-top:-8px;">Default markup % applied to new services when you fill in a Cost Rate.</p>
+        <div class="form-grid">
+          <div><label>Default Markup %</label><input class="field" id="set-default_markup_percent" type="number" step="0.01"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3 style="margin:0;">Add Funds — Quick Amounts</h3></div>
+        <p class="card-sub" style="margin-top:-8px;">Comma-separated quick-select chips shown on the amount step of Add Funds.</p>
+        <div class="form-grid">
+          <div class="full"><label>Quick Amounts</label><input class="field" id="set-deposit_quick_amounts" placeholder="500,1000,2000,5000,10000"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3 style="margin:0;">Upstream Provider</h3></div>
+        <p class="card-sub" style="margin-top:-8px;">When set, new orders are automatically placed with your provider. Also map each service's "Provider Service ID" from the Services tab.</p>
+        <div class="form-grid">
+          <div><label>Auto-place Orders</label>
+            <select class="field" id="set-provider_auto_order">
+              <option value="1">Enabled — send orders to provider automatically</option>
+              <option value="0">Disabled — manual processing only</option>
+            </select>
+          </div>
+          <div><label>Provider API URL</label><input class="field" id="set-provider_api_url" placeholder="https://provider.example/api/v2"></div>
+          <div class="full"><label>Provider API Key</label><input class="field" id="set-provider_api_key" type="password"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3 style="margin-top:0;">Security</h3>
+        <div class="form-grid">
+          <div class="full"><label>Admin Password</label><input class="field" id="set-admin_password" type="text"></div>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="save-settings-btn"><i class="fa-solid fa-floppy-disk"></i> Save Settings</button>
+    </section>
+  </main>
+</div>
+
+<!-- ===== Modals ===== -->
+<div id="platformModal" class="modal center">
+  <div class="modal-content modal-form">
+    <div class="modal-head"><h3 class="card-title" id="platform-modal-title" style="margin:0;">Add Platform</h3><span class="close-button" onclick="closeModal('platformModal')">&times;</span></div>
+    <input type="hidden" id="platform-id">
+    <label>Name</label><input class="field" id="platform-name" placeholder="e.g. TikTok">
+    <label>Icon (Font Awesome class)</label><input class="field" id="platform-icon" placeholder="fa-brands fa-tiktok">
+    <label>Sort Order</label><input class="field" id="platform-sort" type="number" value="0">
+    <label>Status</label>
+    <select class="field" id="platform-status"><option value="active">Active</option><option value="inactive">Inactive</option></select>
+    <button class="btn btn-primary btn-block" id="save-platform-btn" style="margin-top:8px;">Save Platform</button>
+  </div>
+</div>
+
+<div id="categoryModal" class="modal center">
+  <div class="modal-content modal-form">
+    <div class="modal-head"><h3 class="card-title" id="category-modal-title" style="margin:0;">Add Category</h3><span class="close-button" onclick="closeModal('categoryModal')">&times;</span></div>
+    <input type="hidden" id="category-id">
+    <label>Platform</label><select class="field" id="category-platform"></select>
+    <label>Name</label><input class="field" id="category-name" placeholder="e.g. TikTok - Likes [ USA 🇺🇸 - Low Drop ]">
+    <label>Icon (Font Awesome class, optional)</label><input class="field" id="category-icon" placeholder="fa-brands fa-tiktok">
+    <label>Tag (optional, e.g. NEW)</label><input class="field" id="category-tag" placeholder="NEW">
+    <label>Sort Order</label><input class="field" id="category-sort" type="number" value="0">
+    <label>Status</label>
+    <select class="field" id="category-status"><option value="active">Active</option><option value="inactive">Inactive</option></select>
+    <button class="btn btn-primary btn-block" id="save-category-btn" style="margin-top:8px;">Save Category</button>
+  </div>
+</div>
+
+<div id="serviceModal" class="modal center">
+  <div class="modal-content modal-form">
+    <div class="modal-head"><h3 class="card-title" id="service-modal-title" style="margin:0;">Add Service</h3><span class="close-button" onclick="closeModal('serviceModal')">&times;</span></div>
+    <input type="hidden" id="service-id">
+    <label>Public Service ID (used in the API — leave blank on Add to auto-generate)</label><input class="field" id="service-public-id" placeholder="e.g. 100001">
+    <label>Category</label><select class="field" id="service-category"></select>
+    <label>Name</label><input class="field" id="service-name" placeholder="e.g. TikTok Likes USA">
+
+    <div class="form-grid">
+      <div><label>Cost Rate /1000 (what the provider charges)</label><input class="field" id="service-cost-rate" type="number" step="0.00000001"></div>
+      <div><label>Markup %</label><input class="field" id="service-markup" type="number" step="0.01"></div>
+    </div>
+    <label>Sell Rate /1000 (auto-calculated — editable to override)</label><input class="field" id="service-rate" type="number" step="0.00000001">
+
+    <div class="form-grid">
+      <div><label>Min Quantity</label><input class="field" id="service-min" type="number" value="100"></div>
+      <div><label>Max Quantity</label><input class="field" id="service-max" type="number" value="10000"></div>
+    </div>
+    <div class="form-grid">
+      <div><label>Average Time</label><input class="field" id="service-avgtime" placeholder="e.g. 4 minutes"></div>
+      <div><label>Start Type</label><input class="field" id="service-starttype" placeholder="e.g. Instant"></div>
+      <div><label>Speed Info</label><input class="field" id="service-speed" placeholder="e.g. 100k/Days"></div>
+      <div><label>Refill Days (0 = No Refill)</label><input class="field" id="service-refilldays" type="number" value="0"></div>
+    </div>
+    <label>Link Type</label><input class="field" id="service-linktype" placeholder="e.g. Public link or invite link">
+    <label>Description</label>
+    <textarea class="field" id="service-desc" rows="4" style="white-space:pre-wrap;font-family:inherit;"></textarea>
+    <label>Provider Service ID (for auto-ordering)</label><input class="field" id="service-provider">
+    <label>Status</label>
+    <select class="field" id="service-status"><option value="active">Active</option><option value="inactive">Inactive</option></select>
+    <button class="btn btn-primary btn-block" id="save-service-btn" style="margin-top:8px;">Save Service</button>
+  </div>
+</div>
+
+<div id="reapplyMarkupModal" class="modal center">
+  <div class="modal-content modal-form">
+    <div class="modal-head"><h3 class="card-title" style="margin:0;">Reapply Markup</h3><span class="close-button" onclick="closeModal('reapplyMarkupModal')">&times;</span></div>
+    <p class="card-sub">Recomputes <code>rate = cost_rate x (1 + markup% / 100)</code> for every service that has a saved Cost Rate. Leave blank to use each service's own saved markup %.</p>
+    <label>New Markup % (optional — applies to all services)</label><input class="field" id="reapply-markup-value" type="number" step="0.01" placeholder="e.g. 50">
+    <button class="btn btn-primary btn-block" id="confirm-reapply-markup-btn" style="margin-top:8px;">Apply</button>
+  </div>
+</div>
+
+<div id="methodModal" class="modal center">
+  <div class="modal-content modal-form">
+    <div class="modal-head"><h3 class="card-title" id="method-modal-title" style="margin:0;">Add Payment Method</h3><span class="close-button" onclick="closeModal('methodModal')">&times;</span></div>
+    <input type="hidden" id="method-id">
+    <label>Name</label><input class="field" id="method-name" placeholder="e.g. bKash">
+    <label>Icon (Font Awesome class)</label><input class="field" id="method-icon" placeholder="fa-solid fa-mobile-screen">
+    <label>Account Info (number / wallet address, shown to user)</label><textarea class="field" id="method-account" rows="2" placeholder="e.g. 01XXXXXXXXX (Personal)"></textarea>
+    <label>Instructions</label><textarea class="field" id="method-instructions" rows="3" placeholder="e.g. Send Money (not Payment), then keep your reference code in the note."></textarea>
+    <label>Sort Order</label><input class="field" id="method-sort" type="number" value="0">
+    <label>Status</label>
+    <select class="field" id="method-status"><option value="active">Active</option><option value="inactive">Inactive</option></select>
+    <button class="btn btn-primary btn-block" id="save-method-btn" style="margin-top:8px;">Save Method</button>
+  </div>
+</div>
+
+<div id="depositModal" class="modal center">
+  <div class="modal-content modal-form">
+    <div class="modal-head"><h3 class="card-title" style="margin:0;">Review Deposit</h3><span class="close-button" onclick="closeModal('depositModal')">&times;</span></div>
+    <input type="hidden" id="deposit-id">
+    <p class="card-sub" id="deposit-summary"></p>
+    <label>Admin Note (optional)</label><input class="field" id="deposit-note" placeholder="Reason / transaction ID">
+    <div style="display:flex;gap:10px;margin-top:8px;">
+      <button class="btn btn-outline btn-block" id="reject-deposit-btn" style="color:var(--danger);border-color:var(--danger);">Reject</button>
+      <button class="btn btn-primary btn-block" id="approve-deposit-btn">Approve &amp; Credit</button>
+    </div>
+  </div>
+</div>
+
+<div id="balanceModal" class="modal center">
+  <div class="modal-content modal-form">
+    <div class="modal-head"><h3 class="card-title" style="margin:0;">Adjust Balance</h3><span class="close-button" onclick="closeModal('balanceModal')">&times;</span></div>
+    <input type="hidden" id="balance-user-id">
+    <p class="card-sub" id="balance-user-label"></p>
+    <label>Amount (use negative to deduct)</label><input class="field" id="balance-amount" type="number" step="0.01" placeholder="e.g. 50 or -20">
+    <label>Note</label><input class="field" id="balance-note" placeholder="Reason for adjustment">
+    <button class="btn btn-primary btn-block" id="save-balance-btn" style="margin-top:8px;">Apply</button>
+  </div>
+</div>
+
+<div id="userDetailModal" class="modal center">
+  <div class="modal-content modal-form" style="max-width:520px;">
+    <div class="modal-head"><h3 class="card-title" style="margin:0;">User Details</h3><span class="close-button" onclick="closeModal('userDetailModal')">&times;</span></div>
+    <div id="user-detail-body"></div>
+  </div>
+</div>
+
+<script src="assets/js/admin.js?v=8"></script>
+</body>
+</html>
