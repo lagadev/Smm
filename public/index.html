@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Your SMM API Center</title>
+<title>SMM API Center</title>
 
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="assets/css/style.css?v=6">
+<link rel="stylesheet" href="assets/css/style.css?v=8">
 
 <script>
   (function(){
@@ -22,32 +22,17 @@
 <body>
 
 <div id="preloader">
-  <div class="preloader-mark"><img src="assets/img/logo.svg" alt="TG" onerror="this.replaceWith(document.createTextNode('TG'))"></div>
+  <div class="preloader-mark">TG</div>
   <div id="preloader-percentage">0%</div>
 </div>
-<div id="preloader-footer"><a href="#" id="preloader-channel-link" target="_blank">Powered by Your SMM API Center</a></div>
-
-<!-- ===== Force Join gate ===== -->
-<div id="force-join-gate" class="fj-gate hidden">
-  <div class="fj-card">
-    <div class="brand-mark" style="margin:0 auto 14px;"><img src="assets/img/logo.svg" alt="TG" onerror="this.replaceWith(document.createTextNode('TG'))"></div>
-    <h2 style="text-align:center;margin:0 0 4px;">Join to Continue</h2>
-    <p class="card-sub" style="text-align:center;">Join the channel(s) below, then tap Verify.</p>
-    <div id="fj-channel-list"></div>
-    <button class="btn btn-primary btn-block" id="fj-verify-button" style="margin-top:6px;">
-      <span class="button-text"><i class="fa-solid fa-check-double"></i> Verify</span>
-      <div class="spinner hidden"></div>
-    </button>
-    <p class="fj-hint" id="fj-hint"></p>
-  </div>
-</div>
+<div id="preloader-footer"><a href="#" id="preloader-channel-link" target="_blank">Powered by SMM API Center</a></div>
 
 <div class="container">
 
   <!-- ===== Top bar ===== -->
   <div class="topbar">
     <div class="brand">
-      <div class="brand-mark"><img src="assets/img/logo.svg" alt="TG" onerror="this.replaceWith(document.createTextNode('TG'))"></div>
+      <div class="brand-mark">TG</div>
       <div class="brand-name" id="brand-name-text">SMM API Center</div>
     </div>
     <div id="profile-pic"><i class="fa-solid fa-user"></i></div>
@@ -69,7 +54,7 @@
       </div>
     </div>
 
-    <div class="stats-grid stats-grid-3">
+    <div class="stats-grid">
       <div class="stat-item"><div class="icon"><i class="fa-solid fa-bag-shopping"></i></div><div class="value" id="stat-orders">0</div><div class="label">Total Order</div></div>
       <div class="stat-item"><div class="icon"><i class="fa-solid fa-arrow-up"></i></div><div class="value" id="stat-spent">0</div><div class="label">Total Spend</div></div>
       <div class="stat-item"><div class="icon"><i class="fa-solid fa-arrow-down"></i></div><div class="value" id="stat-earned">0</div><div class="label">Total Earn</div></div>
@@ -77,55 +62,60 @@
 
     <div class="card" id="order-card">
       <h3 class="card-title">New Order</h3>
-      <p class="card-sub">Search or pick a category, choose a service, and confirm.</p>
+      <p class="card-sub">Pick a platform, choose a category and service, and confirm.</p>
 
       <div class="search-box">
         <i class="fa-solid fa-magnifying-glass"></i>
-        <input type="text" id="service-search" placeholder="Search">
+        <input type="text" id="service-search" placeholder="Search a service directly">
       </div>
 
       <div class="order-steps">
-        <div class="step">
-          <div class="step-body full-width">
-            <div class="step-label">Category</div>
-            <select class="field" id="category-select"></select>
+        <div>
+          <div class="step-label">Platform</div>
+          <div class="platform-grid" id="platform-grid"></div>
+        </div>
+
+        <div>
+          <div class="step-label">Category</div>
+          <div class="dd" id="category-dd">
+            <button type="button" class="dd-header" id="category-dd-header" disabled>
+              <span class="dd-header-content"><span class="dd-placeholder">Select a platform first</span></span>
+              <i class="fa-solid fa-chevron-down"></i>
+            </button>
+            <div class="dd-list hidden" id="category-dd-list"></div>
           </div>
         </div>
 
-        <div class="step">
-          <div class="step-body full-width">
-            <div class="step-label">Service</div>
-            <select class="field" id="service-select"><option value="">Select a service</option></select>
+        <div>
+          <div class="step-label">Service</div>
+          <div class="dd" id="service-dd">
+            <button type="button" class="dd-header" id="service-dd-header" disabled>
+              <span class="dd-header-content"><span class="dd-placeholder">Select a category first</span></span>
+              <i class="fa-solid fa-chevron-down"></i>
+            </button>
+            <div class="dd-list hidden" id="service-dd-list"></div>
           </div>
         </div>
 
-        <div class="step">
-          <div class="step-body full-width">
-            <div class="step-label">Link</div>
-            <input class="field" id="order-link" type="url" placeholder="https://t.me/yourchannel or profile URL">
-          </div>
+        <div>
+          <div class="step-label">Link</div>
+          <input class="field" id="order-link" type="url" placeholder="https://t.me/yourchannel or profile URL">
         </div>
 
-        <div class="step">
-          <div class="step-body full-width">
-            <div class="step-label">Quantity</div>
-            <input class="field" id="order-qty" type="number" placeholder="e.g. 1000" inputmode="numeric">
-            <div class="field-hint" id="qty-hint">Min: — · Max: —</div>
-          </div>
+        <div>
+          <div class="step-label">Quantity</div>
+          <input class="field" id="order-qty" type="number" placeholder="e.g. 1000" inputmode="numeric">
+          <div class="field-hint" id="qty-hint">Min: — · Max: —</div>
         </div>
 
-        <div class="step">
-          <div class="step-body full-width">
-            <div class="step-label">Average time <i class="fa-solid fa-circle-info" style="font-size:11px;color:var(--text-faint);"></i></div>
-            <input class="field field-readonly" id="order-avgtime" readonly value="—">
-          </div>
+        <div>
+          <div class="step-label">Average time</div>
+          <input class="field field-readonly" id="order-avgtime" readonly value="—">
         </div>
 
-        <div class="step">
-          <div class="step-body full-width">
-            <div class="step-label">Charge</div>
-            <input class="field field-readonly" id="order-charge-field" readonly value="">
-          </div>
+        <div>
+          <div class="step-label">Charge</div>
+          <input class="field field-readonly" id="order-charge-field" readonly value="">
         </div>
 
         <button class="btn btn-submit btn-block" id="confirm-order-button" disabled>
@@ -135,7 +125,7 @@
       </div>
     </div>
 
-    <!-- Live service detail card, matches the provider-style layout -->
+    <!-- Live service detail card -->
     <div class="service-detail-card hidden" id="service-detail-card">
       <div class="sdc-header">
         <div class="sdc-badge" id="sdc-id">#100001</div>
@@ -152,7 +142,7 @@
     </div>
   </section>
 
-  <!-- ===== ADD FUNDS VIEW ===== -->
+  <!-- ===== ADD FUNDS VIEW — unique step flow: amount -> method -> reference ===== -->
   <section id="view-funds" class="view hidden">
     <div class="balance-card balance-card-sm">
       <div class="balance-label">Wallet Balance</div>
@@ -160,31 +150,57 @@
     </div>
 
     <div class="card">
-      <h3 class="card-title">Add Funds</h3>
-      <p class="card-sub">Pick a deposit plan — bonus is added automatically once your admin confirms payment.</p>
-      <div class="deposit-plans" id="deposit-plans"></div>
-    </div>
+      <div class="funds-stepper">
+        <div class="fs-dot active" id="fs-dot-1"></div>
+        <div class="fs-dot" id="fs-dot-2"></div>
+        <div class="fs-dot" id="fs-dot-3"></div>
+      </div>
 
-    <div id="payment-instructions-card" class="card hidden">
-      <div class="notice-box"><i class="fa-solid fa-circle-info"></i><span id="payment-instructions-text"></span></div>
-    </div>
+      <!-- Step 1: amount -->
+      <div id="funds-step-1">
+        <div class="amount-hero">
+          <div class="amount-hero-label">How much would you like to add?</div>
+          <div class="amount-hero-input-wrap">
+            <span class="amount-hero-sym" id="funds-currency-sym">৳</span>
+            <input class="amount-hero-input" id="funds-amount-input" type="number" inputmode="decimal" placeholder="0">
+          </div>
+          <div class="amount-chip-row" id="funds-amount-chips"></div>
+        </div>
+        <button class="btn btn-submit btn-block" id="funds-step1-next" disabled>Continue</button>
+      </div>
 
-    <div class="card">
-      <h3 class="card-title">Enter Promo Code</h3>
-      <p class="card-sub">Have a promo code? Redeem it for an instant balance top-up.</p>
-      <div class="promo-input-row">
-        <input class="field" id="promo-code-input" placeholder="e.g. MARCYDUDESDX7" style="text-transform:uppercase;">
-        <button class="btn btn-submit" id="apply-promo-button" style="flex:0 0 auto;padding:12px 20px;">
-          <span class="button-text">Apply</span>
+      <!-- Step 2: method -->
+      <div id="funds-step-2" class="hidden">
+        <h3 class="card-title">Choose a payment method</h3>
+        <p class="card-sub">Select where you'll send the payment from.</p>
+        <div class="method-grid" id="funds-method-grid"></div>
+        <button class="btn btn-outline btn-block" style="margin-top:14px;" onclick="fundsGoStep(1)"><i class="fa-solid fa-arrow-left"></i> Back</button>
+        <button class="btn btn-submit btn-block" id="funds-step2-next" disabled style="margin-top:10px;">
+          <span class="button-text">Generate Deposit Request</span>
           <div class="spinner hidden"></div>
         </button>
+      </div>
+
+      <!-- Step 3: reference / confirmation -->
+      <div id="funds-step-3" class="hidden">
+        <h3 class="card-title">Send payment &amp; wait for approval</h3>
+        <p class="card-sub">Send the exact amount using the method below, including your reference code in the payment note. Your admin will confirm it shortly.</p>
+        <div class="ref-box">
+          <div class="ref-box-label">Your reference code</div>
+          <div class="ref-box-code" id="funds-ref-code">DEP-XXXXXXXX</div>
+          <div class="ref-box-copy"><button class="btn btn-sm btn-ghost" id="funds-copy-ref"><i class="fa-solid fa-copy"></i> Copy code</button></div>
+        </div>
+        <div class="deposit-summary-row"><span>Amount</span><strong id="funds-summary-amount">—</strong></div>
+        <div class="deposit-summary-row"><span>Method</span><strong id="funds-summary-method">—</strong></div>
+        <div class="deposit-summary-row"><span>Status</span><strong><span class="status-badge pending">Pending</span></strong></div>
+        <div class="deposit-instructions" id="funds-instructions"></div>
+        <button class="btn btn-primary btn-block" style="margin-top:16px;" onclick="fundsReset()"><i class="fa-solid fa-plus"></i> New Deposit Request</button>
       </div>
     </div>
 
     <div class="card">
-      <h3 class="card-title">Add Funds via Admin</h3>
-      <p class="card-sub">Send bKash / Nagad / Binance and our admin will credit your wallet manually.</p>
-      <button class="btn btn-primary btn-block" id="contact-admin-fund-button"><i class="fa-brands fa-telegram"></i><span>Contact Admin to Add Funds</span></button>
+      <h3 class="card-title">My Deposit Requests</h3>
+      <div id="deposit-requests-list"></div>
     </div>
   </section>
 
@@ -247,20 +263,18 @@
     </div>
   </section>
 
-  <!-- ===== DOCS VIEW (loaded in-app, no external browser) ===== -->
+  <!-- ===== DOCS VIEW (rendered in-app from a JS template, no extra file) ===== -->
   <section id="view-docs" class="view hidden">
     <div class="docs-back-row">
       <button class="btn btn-sm btn-ghost" onclick="switchView('profile')"><i class="fa-solid fa-arrow-left"></i> Back</button>
     </div>
-    <div id="docs-content" class="card">
-      <div class="empty-state"><i class="fa-solid fa-spinner fa-spin"></i><p>Loading documentation…</p></div>
-    </div>
+    <div id="docs-content" class="card"></div>
   </section>
 
 </div>
 
 <!-- ===== Nav bar (3 tabs) ===== -->
-<div class="nav-bar nav-bar-3">
+<div class="nav-bar">
   <button class="nav-button active" data-view="home" onclick="switchView('home')"><i class="fa-solid fa-house"></i><span>Home</span></button>
   <button class="nav-button" data-view="funds" onclick="switchView('funds')"><i class="fa-solid fa-wallet"></i><span>Funds</span></button>
   <button class="nav-button" data-view="profile" onclick="switchView('profile')"><i class="fa-solid fa-user"></i><span>Profile</span></button>
@@ -282,6 +296,6 @@
   </div>
 </div>
 
-<script src="assets/js/app.js?v=6"></script>
+<script src="assets/js/app.js?v=8"></script>
 </body>
 </html>
