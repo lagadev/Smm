@@ -19,6 +19,8 @@
  *   GET  /api/orders?telegram_id=
  *   GET  /api/transactions?telegram_id=
  *   GET  /api/user/referral?telegram_id=
+ *   GET  /api/force-join/status                                    -> { enabled, channels }
+ *   GET  /api/force-join/verify?telegram_id=                       -> { ok, missing }
  *   POST /api/deposit/request             { telegram_id, amount }  -> auto-creates a gateway invoice, returns pay_url
  *   GET  /api/deposit/requests?telegram_id=                        -> only ever returns webhook-confirmed (Approved) deposits
  *   POST /api/webhook/gateway                                      -> payment gateway calls this to auto-credit balance
@@ -35,6 +37,7 @@
  *   POST /api/admin/services/reapply-markup         { markup_percent? }
  *   GET/PUT /api/admin/orders(/:id)   POST /api/admin/orders/:id/sync
  *   GET/PUT /api/admin/users(/:id)    GET /api/admin/users/:id/detail
+ *   GET/POST/PUT/DELETE /api/admin/force-join(/:id)
  *   GET /api/admin/deposits            PUT /api/admin/deposits/:id   { status, admin_note? }  (manual override only)
  *   GET/PUT /api/admin/settings
  *
@@ -177,95 +180,96 @@ function mapProviderStatus(providerStatus) {
   if (s.includes("process") || s.includes("in progress")) return "Processing";
   return null;
 }
-// ---------- Auto payment gateway (UglyPay-style) ----------
+// ---------- Auto payment gateway (UglyPay/PayLink) ----------
 async function createGatewayInvoice(db, amount, reference, callbackUrl) {
-  const apiUrl =
-    (await getSetting(db, "gateway_api_url")) ||
-    "https://uglypay.devugly.workers.dev/api/invoices";
-
+  const apiUrl = (await getSetting(db, "gateway_api_url")) || "https://uglypay.devugly.workers.dev/api/invoices";
   const apiKey = await getSetting(db, "gateway_api_key");
+  if (!apiKey) return { error: "Payment gateway is not configured yet. Ask the admin to set the Gateway API Key in Settings." };
 
-  if (!apiKey) {
-    return {
-      error:
-        "Payment gateway is not configured yet. Ask the admin to set the Gateway API Key in Settings.",
-    };
-  }
-
+  let res, raw;
   try {
-    const res = await fetch(apiUrl, {
+    res = await fetch(apiUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        amount: amount,
-        reference: reference,
-        callbackUrl: callbackUrl,
-      }),
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+      body: JSON.stringify({ amount, reference, callbackUrl }),
     });
-
-    const rawText = await res.text();
-
-    let data = null;
-    try {
-      data = JSON.parse(rawText);
-    } catch {
-      return {
-        error: `Payment gateway returned invalid JSON (HTTP ${res.status})`,
-      };
-    }
-
-    if (!res.ok) {
-      return {
-        error:
-          data?.error ||
-          data?.message ||
-          `Payment gateway request failed (HTTP ${res.status})`,
-      };
-    }
-
-    // Gateway normally returns payUrl.
-    // Keep fallbacks so small response-format differences do not break invoices.
-    const payUrl =
-      data?.payUrl ||
-      data?.pay_url ||
-      data?.paymentUrl ||
-      data?.payment_url ||
-      data?.url ||
-      data?.invoice?.payUrl ||
-      data?.invoice?.pay_url ||
-      data?.data?.payUrl ||
-      data?.data?.pay_url;
-
-    const invoiceId =
-      data?.id ||
-      data?.invoiceId ||
-      data?.invoice_id ||
-      data?.invoice?.id ||
-      data?.data?.id ||
-      data?.data?.invoiceId ||
-      null;
-
-    if (!payUrl) {
-      return {
-        error:
-          data?.error ||
-          data?.message ||
-          "The payment gateway did not return a payment link",
-      };
-    }
-
-    return {
-      payUrl: String(payUrl),
-      invoiceId: invoiceId ? String(invoiceId) : null,
-    };
+    raw = await res.text();
   } catch (e) {
-    return {
-      error: `Payment gateway request failed: ${e.message}`,
-    };
+    return { error: `Could not reach the payment gateway: ${e.message}` };
   }
+
+  let data = null;
+  try { data = raw ? JSON.parse(raw) : null; } catch { /* gateway didn't return JSON */ }
+
+  if (!res.ok) {
+    const msg = (data && (data.error || data.message)) || (raw ? raw.slice(0, 300) : `HTTP ${res.status}`);
+    return { error: `Payment gateway rejected the request (HTTP ${res.status}): ${msg}` };
+  }
+
+  // Accept a few common field-name variants so a slightly different gateway response shape still works.
+  const payUrl = data && (data.payUrl || data.pay_url || data.url || data.payment_url || (data.invoice && data.invoice.payUrl));
+  if (!payUrl) {
+    return { error: `The payment gateway responded without a payment link. Raw response: ${raw ? raw.slice(0, 300) : "(empty)"}` };
+  }
+  const invoiceId = (data && (data.id || data.invoiceId)) || (data && data.invoice && data.invoice.id) || null;
+  return { payUrl, invoiceId };
+}
+
+// ---------- Force-join (Telegram membership) ----------
+async function tgGetChatMember(botToken, chatId, userId) {
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/getChatMember?chat_id=${encodeURIComponent(chatId)}&user_id=${encodeURIComponent(userId)}`);
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+async function refundOrder(db, order, note) {
+  await db.prepare("UPDATE users SET balance = balance + ? WHERE id = ?").bind(order.charge, order.user_id).run();
+  await db.prepare("INSERT INTO transactions (user_id, type, amount, note) VALUES (?, 'admin_add', ?, ?)").bind(order.user_id, order.charge, note).run();
+}
+
+async function createOrder(db, user, servicePublicId, link, quantity, source) {
+  const service = await db.prepare(
+    `SELECT s.*, c.name AS category_name, p.name AS platform_name
+     FROM services s
+     JOIN categories c ON c.id = s.category_id
+     JOIN platforms p ON p.id = c.platform_id
+     WHERE s.public_id = ? AND s.status = 'active'`
+  ).bind(servicePublicId).first();
+  if (!service) return { error: "Service not found or inactive" };
+
+  const qty = parseInt(quantity, 10);
+  if (!Number.isFinite(qty) || qty < service.min_qty || qty > service.max_qty) {
+    return { error: `Quantity must be between ${service.min_qty} and ${service.max_qty}` };
+  }
+  if (!/^https?:\/\//i.test(link || "")) return { error: "Please provide a valid link starting with http(s)://" };
+
+  const charge = Math.round(((service.rate * qty) / 1000) * 1e8) / 1e8;
+  if (charge <= 0) return { error: "Invalid charge calculated" };
+  if (user.balance < charge) return { error: "Insufficient balance" };
+
+  await db.prepare("UPDATE users SET balance = balance - ? WHERE id = ?").bind(charge, user.id).run();
+  const refillAvailable = service.refill_days > 0 ? 1 : 0;
+  const insert = await db.prepare(
+    `INSERT INTO orders (user_id, service_id, service_public_id, service_name, category_name, platform_name, link, quantity, charge, status, source, refill_available)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?)`
+  ).bind(user.id, service.id, service.public_id, service.name, service.category_name, service.platform_name, link, qty, charge, source, refillAvailable).run();
+  const orderId = insert.meta.last_row_id;
+  await db.prepare("INSERT INTO transactions (user_id, type, amount, note) VALUES (?, 'order', ?, ?)")
+    .bind(user.id, -charge, `Order #${orderId}: ${service.name}`).run();
+
+  const providerResult = await placeProviderOrder(db, service, link, qty);
+  if (providerResult && providerResult.providerOrderId) {
+    await db.prepare("UPDATE orders SET status = 'Processing', provider_order_id = ? WHERE id = ?").bind(providerResult.providerOrderId, orderId).run();
+  } else if (providerResult && providerResult.error) {
+    await db.prepare("UPDATE orders SET provider_error = ? WHERE id = ?").bind(providerResult.error, orderId).run();
+  }
+
+  const order = await db.prepare("SELECT * FROM orders WHERE id = ?").bind(orderId).first();
+  const updatedUser = await db.prepare("SELECT * FROM users WHERE id = ?").bind(user.id).first();
+  return { order, balance: updatedUser.balance };
 }
 
 // ================= ROUTER =================
@@ -378,6 +382,41 @@ async function handleApi(request, env, url, pathname, ctx) {
         bonus_percent: parseFloat((await getSetting(db, "referral_bonus_percent")) || "0"),
       },
     });
+  }
+
+  // ---------- Force-Join gate ----------
+  if (pathname === "/api/force-join/status" && method === "GET") {
+    const enabled = (await getSetting(db, "force_join_enabled")) === "1";
+    if (!enabled) return json({ ok: true, enabled: false, channels: [] });
+    const { results } = await db.prepare(
+      "SELECT id, name, join_link FROM force_join_channels WHERE status = 'active' ORDER BY sort_order ASC, id ASC"
+    ).all();
+    return json({ ok: true, enabled: results.length > 0, channels: results });
+  }
+
+  if (pathname === "/api/force-join/verify" && method === "GET") {
+    const tid = url.searchParams.get("telegram_id");
+    if (!tid) return err("telegram_id required");
+    const enabled = (await getSetting(db, "force_join_enabled")) === "1";
+    if (!enabled) return json({ ok: true });
+
+    const { results: channels } = await db.prepare(
+      "SELECT id, name, join_link, chat_id FROM force_join_channels WHERE status = 'active' ORDER BY sort_order ASC, id ASC"
+    ).all();
+    if (!channels.length) return json({ ok: true });
+
+    const botToken = (await getSetting(db, "bot_token")) || env.BOT_TOKEN;
+    if (!botToken) return json({ ok: true }); // can't verify membership without a bot token — fail-open
+
+    const missing = [];
+    for (const c of channels) {
+      if (!c.chat_id) continue; // no chat_id set for this channel — can't verify it, so don't block on it
+      const memberData = await tgGetChatMember(botToken, c.chat_id, tid);
+      const status = memberData && memberData.ok && memberData.result ? memberData.result.status : null;
+      const joined = status === "member" || status === "administrator" || status === "creator";
+      if (!joined) missing.push({ id: c.id, name: c.name, join_link: c.join_link });
+    }
+    return json({ ok: missing.length === 0, missing });
   }
 
   if (pathname === "/api/user" && method === "GET") {
@@ -985,6 +1024,27 @@ async function handleAdmin(db, env, method, pathname, request, url) {
       .bind(b.status, b.admin_note || null, m[1]).run();
     return json({ ok: true });
   }
+
+  // ---- force-join channels ----
+  if (pathname === "/api/admin/force-join" && method === "GET") {
+    const { results } = await db.prepare("SELECT * FROM force_join_channels ORDER BY sort_order ASC, id ASC").all();
+    return json({ ok: true, channels: results });
+  }
+  if (pathname === "/api/admin/force-join" && method === "POST") {
+    const b = await request.json().catch(() => ({}));
+    if (!b.name || !b.join_link) return err("name and join_link required");
+    const res = await db.prepare("INSERT INTO force_join_channels (name, chat_id, join_link, sort_order, status) VALUES (?, ?, ?, ?, ?)")
+      .bind(b.name, b.chat_id || null, b.join_link, b.sort_order || 0, b.status || "active").run();
+    return json({ ok: true, id: res.meta.last_row_id });
+  }
+  m = pathname.match(/^\/api\/admin\/force-join\/(\d+)$/);
+  if (m && method === "PUT") {
+    const b = await request.json().catch(() => ({}));
+    await db.prepare("UPDATE force_join_channels SET name = ?, chat_id = ?, join_link = ?, sort_order = ?, status = ? WHERE id = ?")
+      .bind(b.name, b.chat_id || null, b.join_link, b.sort_order ?? 0, b.status || "active", m[1]).run();
+    return json({ ok: true });
+  }
+  if (m && method === "DELETE") { await db.prepare("DELETE FROM force_join_channels WHERE id = ?").bind(m[1]).run(); return json({ ok: true }); }
 
   // ---- settings ----
   if (pathname === "/api/admin/settings" && method === "GET") return json({ ok: true, settings: await getSettings(db) });
