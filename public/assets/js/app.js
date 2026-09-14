@@ -1,5 +1,5 @@
 // =====================================================
-// Mini App front-end logic (v8)
+// Mini App front-end logic (v9) - Amar SMM
 // =====================================================
 const API = ""; // same-origin Worker
 
@@ -9,15 +9,13 @@ let state = {
   user: null,
   settings: {},
   platforms: [],
-  categories: [],       // categories for the selected platform
   services: [],          // all active services (flat), used for search
-  visibleServices: [],   // services for the selected category
+  visibleServices: [],   // services for the selected platform
   selectedPlatform: null,
   selectedCategory: null,
   selectedService: null,
-  paymentMethods: [],
   fundsAmount: 0,
-  fundsMethod: null,
+  referral: null,
 };
 
 const el = (id) => document.getElementById(id);
@@ -85,8 +83,13 @@ window.onclick = (e) => { if (e.target.classList && e.target.classList.contains(
 // ---------------- Auth ----------------
 async function authenticate() {
   let body;
-  if (tg && tg.initData) body = { initData: tg.initData };
-  else body = { debugUser: { id: 999999, first_name: 'Guest', username: 'guest' } };
+  if (tg && tg.initData) {
+    body = { initData: tg.initData };
+    const startParam = tg.initDataUnsafe && tg.initDataUnsafe.start_param;
+    if (startParam) body.start_param = startParam;
+  } else {
+    body = { debugUser: { id: 999999, first_name: 'Guest', username: 'guest' } };
+  }
   const { user } = await api('/api/auth', { method: 'POST', body: JSON.stringify(body) });
   state.user = user;
 }
@@ -101,7 +104,7 @@ async function loadSettings() {
   el('funds-currency-sym').textContent = sym;
   el('preloader-channel-link').href = settings.channel_link || '#';
 
-  const siteName = settings.site_name || 'SMM API Center';
+  const siteName = settings.site_name || 'Amar SMM';
   document.title = siteName;
   el('brand-name-text').textContent = siteName;
 }
@@ -163,17 +166,16 @@ async function selectPlatform(platformId){
   state.selectedPlatform = state.platforms.find(p => p.id === platformId) || null;
   document.querySelectorAll('.platform-item').forEach(b => b.classList.toggle('selected', Number(b.dataset.id) === platformId));
 
-  const { categories } = await api(`/api/categories?platform_id=${platformId}`);
-  state.categories = categories;
-  state.selectedCategory = null;
   state.selectedService = null;
-  el('category-dd-header').disabled = false;
-  setDropdownHeader('category', null);
-  setDropdownHeader('service', null, 'Select a category first');
-  el('service-dd-header').disabled = true;
-  renderCategoryDropdownList();
+  el('service-dd-header').disabled = false;
+  setDropdownHeader('service', null);
+
+  const { services } = await api(`/api/services?platform_id=${platformId}`);
+  state.visibleServices = services;
+  renderServiceDropdownList(services);
   el('service-detail-card').classList.add('hidden');
   clearOrderFields();
+  toggleDropdown('service', true);
 }
 
 // ---------------- Custom dropdowns ----------------
@@ -198,52 +200,15 @@ function setDropdownHeader(name, html, placeholder){
   content.innerHTML = html || `<span class="dd-placeholder">${escapeHTML(placeholder || 'Select an option')}</span>`;
 }
 
-function renderCategoryDropdownList(){
-  const list = el('category-dd-list');
-  if (!state.categories.length) { list.innerHTML = `<div class="dd-empty">No categories for this platform yet</div>`; }
-  else {
-    list.innerHTML = state.categories.map(c => `
-      <div class="dd-item" data-id="${c.id}">
-        <div class="dd-icon"><i class="${escapeHTML(c.icon || state.selectedPlatform.icon)}"></i></div>
-        <div class="dd-item-text">${escapeHTML(c.name)}</div>
-        ${c.tag ? `<span class="dd-tag">${escapeHTML(c.tag)}</span>` : ''}
-      </div>`).join('');
-  }
-  list.querySelectorAll('.dd-item').forEach(item => {
-    item.addEventListener('click', () => selectCategory(Number(item.dataset.id)));
-  });
-  el('category-dd-header').onclick = () => toggleDropdown('category');
-}
-
-async function selectCategory(categoryId){
-  state.selectedCategory = state.categories.find(c => c.id === categoryId) || null;
-  toggleDropdown('category', false);
-  document.querySelectorAll('#category-dd-list .dd-item').forEach(i => i.classList.toggle('selected', Number(i.dataset.id) === categoryId));
-
-  const c = state.selectedCategory;
-  setDropdownHeader('category', `
-    <div class="dd-icon"><i class="${escapeHTML(c.icon || state.selectedPlatform.icon)}"></i></div>
-    <span class="dd-text">${escapeHTML(c.name)}</span>`);
-
-  const { services } = await api(`/api/services?category_id=${categoryId}`);
-  state.visibleServices = services;
-  state.selectedService = null;
-  el('service-dd-header').disabled = false;
-  setDropdownHeader('service', null);
-  renderServiceDropdownList(services);
-  el('service-detail-card').classList.add('hidden');
-  clearOrderFields();
-}
-
 function renderServiceDropdownList(services){
   const list = el('service-dd-list');
   const sym = state.settings.currency_symbol || '$';
-  if (!services.length) { list.innerHTML = `<div class="dd-empty">No services in this category yet</div>`; }
+  if (!services.length) { list.innerHTML = `<div class="dd-empty">No services for this platform yet</div>`; }
   else {
     list.innerHTML = services.map(s => `
       <div class="dd-item" data-id="${s.public_id}">
         <span class="dd-badge">${s.public_id}</span>
-        <div class="dd-item-text">${escapeHTML(s.name)} ~ ${sym}${formatBalance(s.rate)}/1000</div>
+        <div class="dd-item-text">${escapeHTML(s.name)}${s.category_name ? `<br><span style="font-weight:500;color:var(--text-faint);font-size:11.5px;">${escapeHTML(s.category_name)}</span>` : ''} ~ ${sym}${formatBalance(s.rate)}/1000</div>
       </div>`).join('');
   }
   list.querySelectorAll('.dd-item').forEach(item => {
@@ -360,15 +325,7 @@ async function confirmOrder(){
   }
 }
 
-// ---------------- Add Funds — unique amount -> method -> reference flow ----------------
-function fundsGoStep(n){
-  [1,2,3].forEach(i => {
-    el('funds-step-' + i).classList.toggle('hidden', i !== n);
-    el('fs-dot-' + i).classList.toggle('active', i === n);
-    el('fs-dot-' + i).classList.toggle('done', i < n);
-  });
-}
-
+// ---------------- Add Funds — single-step automatic gateway checkout ----------------
 function renderFundsChips(){
   const amounts = state.settings.deposit_quick_amounts && state.settings.deposit_quick_amounts.length
     ? state.settings.deposit_quick_amounts : [500, 1000, 2000, 5000, 10000];
@@ -384,55 +341,24 @@ function renderFundsChips(){
 function onFundsAmountInput(){
   const val = parseFloat(el('funds-amount-input').value);
   state.fundsAmount = Number.isFinite(val) && val > 0 ? val : 0;
-  el('funds-step1-next').disabled = state.fundsAmount <= 0;
+  el('funds-pay-btn').disabled = state.fundsAmount <= 0;
   document.querySelectorAll('.amount-chip').forEach(c => c.classList.toggle('active', Number(c.dataset.amt) === state.fundsAmount));
 }
 
-async function loadPaymentMethods(){
-  const { methods } = await api('/api/deposit/methods');
-  state.paymentMethods = methods;
-}
-function renderFundsMethods(){
-  const grid = el('funds-method-grid');
-  if (!state.paymentMethods.length) {
-    grid.innerHTML = `<div class="dd-empty" style="grid-column:1/-1;">No payment methods configured yet — ask the admin to add one.</div>`;
-    return;
-  }
-  grid.innerHTML = state.paymentMethods.map(m => `
-    <div class="method-card" data-id="${m.id}">
-      <div class="m-icon"><i class="${escapeHTML(m.icon || 'fa-solid fa-wallet')}"></i></div>
-      <div class="m-name">${escapeHTML(m.name)}</div>
-    </div>`).join('');
-  grid.querySelectorAll('.method-card').forEach(c => {
-    c.addEventListener('click', () => {
-      state.fundsMethod = state.paymentMethods.find(m => m.id === Number(c.dataset.id));
-      grid.querySelectorAll('.method-card').forEach(x => x.classList.toggle('selected', x === c));
-      el('funds-step2-next').disabled = false;
-    });
-  });
-}
-
-async function submitDepositRequest(){
-  if (!state.fundsMethod || state.fundsAmount <= 0) return;
-  const btn = el('funds-step2-next');
+async function payNow(){
+  if (state.fundsAmount <= 0) return;
+  const btn = el('funds-pay-btn');
   btn.disabled = true;
   btn.querySelector('.button-text').classList.add('hidden');
   btn.querySelector('.spinner').classList.remove('hidden');
   try{
-    const { request } = await api('/api/deposit/request', {
+    const { pay_url } = await api('/api/deposit/request', {
       method: 'POST',
-      body: JSON.stringify({ telegram_id: state.user.telegram_id, method_id: state.fundsMethod.id, amount: state.fundsAmount }),
+      body: JSON.stringify({ telegram_id: state.user.telegram_id, amount: state.fundsAmount }),
     });
-    const sym = state.settings.currency_symbol || '৳';
-    el('funds-ref-code').textContent = request.reference_code;
-    el('funds-summary-amount').textContent = sym + Number(state.fundsAmount).toLocaleString();
-    el('funds-summary-method').textContent = state.fundsMethod.name;
-    el('funds-instructions').textContent =
-      (state.fundsMethod.account_info ? `Send to: ${state.fundsMethod.account_info}\n\n` : '') +
-      (state.fundsMethod.instructions || 'Include your reference code in the payment note, then wait for admin approval.');
-    fundsGoStep(3);
     haptic('success');
-    renderDepositRequests();
+    if (tg && tg.openLink) tg.openLink(pay_url);
+    else window.location.href = pay_url;
   }catch(e){
     haptic('error');
     safeAlert(e.message);
@@ -443,95 +369,44 @@ async function submitDepositRequest(){
   }
 }
 
-function fundsReset(){
-  state.fundsAmount = 0;
-  state.fundsMethod = null;
-  el('funds-amount-input').value = '';
-  document.querySelectorAll('.amount-chip').forEach(c => c.classList.remove('active'));
-  document.querySelectorAll('.method-card').forEach(c => c.classList.remove('selected'));
-  el('funds-step1-next').disabled = true;
-  el('funds-step2-next').disabled = true;
-  fundsGoStep(1);
-}
-
-function copyRefCode(){
-  const code = el('funds-ref-code').textContent;
-  navigator.clipboard.writeText(code).then(() => safeAlert('Reference code copied!')).catch(() => {});
-}
-
 async function renderDepositRequests(){
   try{
     const { requests } = await api(`/api/deposit/requests?telegram_id=${state.user.telegram_id}`);
     const wrap = el('deposit-requests-list');
-    if (!requests.length){ wrap.innerHTML = emptyState('fa-sack-dollar', 'No deposit requests yet'); return; }
+    if (!requests.length){ wrap.innerHTML = emptyState('fa-sack-dollar', 'No successful payments yet'); return; }
     const sym = state.settings.currency_symbol || '৳';
     wrap.innerHTML = requests.map(r => `
       <div class="history-item">
         <div class="history-details">
           <span class="name">${escapeHTML(r.reference_code)}</span>
-          <span class="meta">${escapeHTML(r.method_name)} · ${new Date(r.created_at).toLocaleString()}</span>
+          <span class="meta">${new Date(r.updated_at || r.created_at).toLocaleString()}</span>
         </div>
         <div class="history-amount">
-          <div class="amt">${sym}${Number(r.amount).toLocaleString()}</div>
-          <span class="status-badge ${r.status.toLowerCase()}">${escapeHTML(r.status)}</span>
+          <div class="amt">+${sym}${Number(r.amount).toLocaleString()}</div>
+          <span class="status-badge approved">Approved</span>
         </div>
       </div>`).join('');
   }catch(e){}
 }
 
-// ---------------- In-app API docs (generated inline — no extra file) ----------------
-function renderDocsHtml(){
-  const base = window.location.origin + '/api/v2';
-  return `
-  <div class="toc">
-    <a href="#api">API</a><a href="#services">Service List</a><a href="#add">Add Order</a>
-    <a href="#status">Order Status</a><a href="#refill">Refill</a><a href="#refillstatus">Refill Status</a>
-    <a href="#cancel">Cancel</a><a href="#balance">Balance</a>
-  </div>
-
-  <h2 class="section-title" id="api"><i class="fa-solid fa-plug"></i> API</h2>
-  <table class="doc-table">
-    <tr><th>HTTP Method</th><td>POST</td></tr>
-    <tr><th>API URL</th><td>${escapeHTML(base)}</td></tr>
-    <tr><th>API Key</th><td>Get your key on the <strong>Profile</strong> tab</td></tr>
-    <tr><th>Return format</th><td>JSON</td></tr>
-  </table>
-
-  <h2 class="section-title" id="services"><i class="fa-solid fa-list"></i> Service List</h2>
-  <table class="doc-table"><tr><th>Parameter</th><th>Description</th></tr><tr><td>key</td><td>Your API key</td></tr><tr><td>action</td><td>services</td></tr></table>
-  <div class="code-block">[
-  { <span class="k">"service"</span>: 100001, <span class="k">"name"</span>: <span class="s">"TikTok Likes USA"</span>, <span class="k">"category"</span>: <span class="s">"TikTok - Likes [ USA ]"</span>, <span class="k">"platform"</span>: <span class="s">"TikTok"</span>, <span class="k">"rate"</span>: <span class="s">"18.11"</span>, <span class="k">"min"</span>: <span class="s">"100"</span>, <span class="k">"max"</span>: <span class="s">"100000"</span>, <span class="k">"refill"</span>: false, <span class="k">"cancel"</span>: true }
-]</div>
-
-  <h2 class="section-title" id="add"><i class="fa-solid fa-bolt"></i> Add Order</h2>
-  <table class="doc-table"><tr><th>Parameter</th><th>Description</th></tr><tr><td>key</td><td>Your API key</td></tr><tr><td>action</td><td>add</td></tr><tr><td>service</td><td>Service ID</td></tr><tr><td>link</td><td>Link to page</td></tr><tr><td>quantity</td><td>Needed quantity</td></tr></table>
-  <div class="code-block">{ <span class="k">"order"</span>: 23501 }</div>
-
-  <h2 class="section-title" id="status"><i class="fa-solid fa-magnifying-glass"></i> Order Status</h2>
-  <table class="doc-table"><tr><th>Parameter</th><th>Description</th></tr><tr><td>key</td><td>Your API key</td></tr><tr><td>action</td><td>status</td></tr><tr><td>order / orders</td><td>Single ID, or comma-separated up to 100</td></tr></table>
-  <div class="code-block">{ <span class="k">"charge"</span>: <span class="s">"0.27819"</span>, <span class="k">"start_count"</span>: <span class="s">"3572"</span>, <span class="k">"status"</span>: <span class="s">"Partial"</span>, <span class="k">"remains"</span>: <span class="s">"157"</span>, <span class="k">"currency"</span>: <span class="s">"BDT"</span> }</div>
-
-  <h2 class="section-title" id="refill"><i class="fa-solid fa-rotate"></i> Create Refill</h2>
-  <table class="doc-table"><tr><th>Parameter</th><th>Description</th></tr><tr><td>key</td><td>Your API key</td></tr><tr><td>action</td><td>refill</td></tr><tr><td>order / orders</td><td>Single ID, or comma-separated up to 100</td></tr></table>
-  <div class="code-block">{ <span class="k">"refill"</span>: <span class="s">"1"</span> }</div>
-
-  <h2 class="section-title" id="refillstatus"><i class="fa-solid fa-clipboard-check"></i> Refill Status</h2>
-  <table class="doc-table"><tr><th>Parameter</th><th>Description</th></tr><tr><td>key</td><td>Your API key</td></tr><tr><td>action</td><td>refill_status</td></tr><tr><td>refill / refills</td><td>Single ID, or comma-separated up to 100</td></tr></table>
-  <div class="code-block">{ <span class="k">"status"</span>: <span class="s">"Completed"</span> }</div>
-
-  <h2 class="section-title" id="cancel"><i class="fa-solid fa-ban"></i> Create Cancel</h2>
-  <table class="doc-table"><tr><th>Parameter</th><th>Description</th></tr><tr><td>key</td><td>Your API key</td></tr><tr><td>action</td><td>cancel</td></tr><tr><td>orders</td><td>Order IDs, comma-separated (up to 100)</td></tr></table>
-  <div class="code-block">{ <span class="k">"2"</span>: { <span class="k">"order"</span>: 2, <span class="k">"cancel"</span>: 1 } }</div>
-
-  <h2 class="section-title" id="balance"><i class="fa-solid fa-wallet"></i> User Balance</h2>
-  <table class="doc-table"><tr><th>Parameter</th><th>Description</th></tr><tr><td>key</td><td>Your API key</td></tr><tr><td>action</td><td>balance</td></tr></table>
-  <div class="code-block">{ <span class="k">"balance"</span>: <span class="s">"100.84"</span>, <span class="k">"currency"</span>: <span class="s">"BDT"</span> }</div>
-
-  <p class="doc-note">All errors are returned as <code>{"error": "message"}</code> with HTTP 200, matching common SMM-panel API conventions.</p>`;
+// ---------------- Refer & Earn ----------------
+async function loadReferral(){
+  try{
+    const { referral } = await api(`/api/user/referral?telegram_id=${state.user.telegram_id}`);
+    state.referral = referral;
+    const sym = state.settings.currency_symbol || '৳';
+    el('ref-link-input').value = referral.link || 'Ask the admin to set the bot username in Settings';
+    el('ref-bonus-text').textContent = referral.bonus_percent > 0
+      ? `Earn ${referral.bonus_percent}% bonus on every friend's deposit`
+      : 'Invite friends and grow together';
+    el('ref-count').textContent = referral.referral_count;
+    el('ref-earnings').textContent = sym + formatBalance(referral.referral_earnings);
+  }catch(e){}
 }
-function openDocsInApp(){
-  switchView('docs');
-  el('docs-content').innerHTML = renderDocsHtml();
+function copyReferralLink(){
+  const link = el('ref-link-input').value;
+  if (!link || !state.referral || !state.referral.link) return;
+  navigator.clipboard.writeText(link).then(() => safeAlert('Referral link copied!')).catch(() => {});
 }
 
 // ---------------- History (Profile tab) ----------------
@@ -641,9 +516,8 @@ async function bootApp(){
   state.platforms = platforms;
   renderPlatformGrid();
   await loadAllServicesForSearch();
-  await loadPaymentMethods();
   renderFundsChips();
-  renderFundsMethods();
+  loadReferral();
 
   updateBalanceUI();
   updateTokenUI();
@@ -667,7 +541,7 @@ async function bootApp(){
   el('confirm-order-button').addEventListener('click', confirmOrder);
   el('copy-token-btn').addEventListener('click', copyToken);
   el('regen-token-btn').addEventListener('click', regenerateToken);
-  el('api-docs-button').addEventListener('click', openDocsInApp);
+  el('ref-copy-btn').addEventListener('click', copyReferralLink);
   el('order-search-input').addEventListener('input', renderFilteredOrders);
   document.querySelectorAll('#order-status-filter .pill').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -679,19 +553,18 @@ async function bootApp(){
   });
 
   el('funds-amount-input').addEventListener('input', onFundsAmountInput);
-  el('funds-step1-next').addEventListener('click', () => fundsGoStep(2));
-  el('funds-step2-next').addEventListener('click', submitDepositRequest);
-  el('funds-copy-ref').addEventListener('click', copyRefCode);
+  el('funds-pay-btn').addEventListener('click', payNow);
 
   safeTgAction();
 
   if (!state.user.onboarded) {
-    el('welcome-title').textContent = `Welcome to ${state.settings.site_name || 'SMM API Center'}!`;
+    el('welcome-title').textContent = `Welcome to ${state.settings.site_name || 'Amar SMM'}!`;
     el('welcome-message').textContent =
       `Order real, high-quality engagement across TikTok, Instagram, YouTube, Facebook, Telegram &amp; more.\n\n` +
-      `💰 Add funds anytime from the Funds tab — pick a method, get your reference code, and our admin will confirm it.\n` +
+      `💰 Add funds instantly from the Funds tab — payments are verified automatically, no waiting.\n` +
+      `🎁 Refer friends from your Profile tab and earn a bonus on every deposit they make.\n` +
       `⚡ Orders are placed automatically with our provider where available.\n` +
-      `🔑 Find your personal API key and full docs under the Profile tab.`;
+      `🔑 Find your personal API key under the Profile tab.`;
     showModal('welcomeModal');
     api('/api/user/mark-onboarded', { method: 'POST', body: JSON.stringify({ telegram_id: state.user.telegram_id }) }).catch(() => {});
   }
