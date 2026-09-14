@@ -23,8 +23,20 @@ function escapeHTML(s){ if(!s) return ''; return String(s).replace(/&/g,'&amp;')
 function formatBalance(n){ return (Number(n) || 0).toFixed(8); }
 function safeAlert(msg){ if(tg && tg.showAlert){ tg.showAlert(msg); } else { alert(msg); } }
 function haptic(type){ try{ tg && tg.HapticFeedback && tg.HapticFeedback.notificationOccurred(type); }catch(e){} }
-function safeTgOpen(link){ if (!link) return; if (tg && tg.openTelegramLink) tg.openTelegramLink(link); else window.open(link, '_blank'); }
+function safeTgOpen(link){
+  if (!link) return;
 
+  try {
+    if (tg && typeof tg.openLink === 'function') {
+      tg.openLink(link);
+      return;
+    }
+
+    window.location.assign(link);
+  } catch (e) {
+    window.open(link, '_blank');
+  }
+}
 async function api(path, opts = {}) {
   const res = await fetch(API + path, { ...opts, headers: { "Content-Type": "application/json", ...(opts.headers || {}) } });
   const data = await res.json().catch(() => ({}));
@@ -397,48 +409,47 @@ function onFundsAmountInput(){
 
 async function payNow(){
   if (state.fundsAmount <= 0) return;
+
   const btn = el('funds-pay-btn');
+
   btn.disabled = true;
   btn.querySelector('.button-text').classList.add('hidden');
   btn.querySelector('.spinner').classList.remove('hidden');
-  try{
-    const { pay_url } = await api('/api/deposit/request', {
+
+  try {
+    const data = await api('/api/deposit/request', {
       method: 'POST',
-      body: JSON.stringify({ telegram_id: state.user.telegram_id, amount: state.fundsAmount }),
+      body: JSON.stringify({
+        telegram_id: state.user.telegram_id,
+        amount: state.fundsAmount
+      }),
     });
+
+    console.log('Deposit response:', data);
+
+    const payUrl = data.pay_url;
+
+    if (!payUrl) {
+      throw new Error('Payment link was not returned by the gateway.');
+    }
+
     haptic('success');
-    if (tg && tg.openLink) tg.openLink(pay_url);
-    else window.location.href = pay_url;
-  }catch(e){
+
+    // Open external payment page
+    safeTgOpen(payUrl);
+
+  } catch(e) {
+    console.error('Payment error:', e);
+
     haptic('error');
     safeAlert(e.message);
-  }finally{
+
+  } finally {
     btn.disabled = false;
     btn.querySelector('.button-text').classList.remove('hidden');
     btn.querySelector('.spinner').classList.add('hidden');
   }
 }
-
-async function renderDepositRequests(){
-  try{
-    const { requests } = await api(`/api/deposit/requests?telegram_id=${state.user.telegram_id}`);
-    const wrap = el('deposit-requests-list');
-    if (!requests.length){ wrap.innerHTML = emptyState('fa-sack-dollar', 'No successful payments yet'); return; }
-    const sym = state.settings.currency_symbol || '৳';
-    wrap.innerHTML = requests.map(r => `
-      <div class="history-item">
-        <div class="history-details">
-          <span class="name">${escapeHTML(r.reference_code)}</span>
-          <span class="meta">${new Date(r.updated_at || r.created_at).toLocaleString()}</span>
-        </div>
-        <div class="history-amount">
-          <div class="amt">+${sym}${Number(r.amount).toLocaleString()}</div>
-          <span class="status-badge approved">Approved</span>
-        </div>
-      </div>`).join('');
-  }catch(e){}
-}
-
 // ---------------- Refer & Earn ----------------
 async function loadReferral(){
   try{
