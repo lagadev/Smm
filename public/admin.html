@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Amar SMM — Admin</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="assets/css/style.css?v=9">
+<link rel="stylesheet" href="assets/css/style.css?v=10">
 </head>
 <body class="admin-body">
 
@@ -32,6 +32,7 @@
     <button class="side-link" data-tab="orders"><i class="fa-solid fa-bag-shopping"></i> Orders</button>
     <button class="side-link" data-tab="users"><i class="fa-solid fa-users"></i> Users</button>
     <button class="side-link" data-tab="deposits"><i class="fa-solid fa-sack-dollar"></i> Deposits</button>
+    <button class="side-link" data-tab="forcejoin"><i class="fa-solid fa-lock"></i> Force Join</button>
     <button class="side-link" data-tab="settings"><i class="fa-solid fa-gear"></i> Settings</button>
     <button class="side-link logout" id="logout-button"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</button>
   </aside>
@@ -138,6 +139,28 @@
         </div>
         <p class="card-sub" style="margin-top:-6px;">Fully automatic — the payment gateway's webhook verifies each payment and credits the wallet instantly. This log is read-only. Rows staying "Pending" simply mean the customer never completed payment at the gateway; nothing needs action here.</p>
         <div class="table-wrap"><table class="admin-table" id="deposits-table"><thead><tr><th>Ref Code</th><th>User</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- Force Join -->
+    <section class="admin-tab" id="tab-forcejoin">
+      <div class="panel">
+        <div class="panel-head"><h3 style="margin:0;">Force Join Gate</h3></div>
+        <p class="card-sub" style="margin-top:-8px;">When enabled, users must join every channel below before the Mini App unlocks — matches the "Access Required" screen. A channel only gets <em>verified</em> (blocking) if you set its Chat ID; for that to work your bot must be an admin of that channel. Channels left without a Chat ID still show up as a Join prompt, but won't block access.</p>
+        <div class="form-grid">
+          <div><label>Force Join</label>
+            <select class="field" id="set-force_join_enabled">
+              <option value="0">Disabled</option>
+              <option value="1">Enabled</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-sm" id="save-forcejoin-toggle-btn" style="margin-top:4px;">Save</button>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3>Channels</h3><button class="btn btn-primary btn-sm" id="add-forcejoin-btn"><i class="fa-solid fa-plus"></i> Add Channel</button></div>
+        <div class="table-wrap"><table class="admin-table" id="forcejoin-table"><thead><tr><th>#</th><th>Name</th><th>Chat ID</th><th>Join Link</th><th>Order</th><th>Status</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
       </div>
     </section>
 
@@ -289,6 +312,21 @@
   </div>
 </div>
 
+<div id="forceJoinModal" class="modal center">
+  <div class="modal-content modal-form">
+    <div class="modal-head"><h3 class="card-title" id="forcejoin-modal-title" style="margin:0;">Add Channel</h3><span class="close-button" onclick="closeModal('forceJoinModal')">&times;</span></div>
+    <input type="hidden" id="forcejoin-id">
+    <label>Name (shown to users)</label><input class="field" id="forcejoin-name" placeholder="e.g. Official Channel 1">
+    <label>Join Link</label><input class="field" id="forcejoin-link" placeholder="https://t.me/yourchannel">
+    <label>Chat ID (optional — required to actually verify/block)</label><input class="field" id="forcejoin-chatid" placeholder="@yourchannel or -1001234567890">
+    <p class="card-sub" style="margin:-6px 0 0;">Your bot must be an admin of this chat for verification to work. Leave blank to show a Join prompt without blocking.</p>
+    <label>Sort Order</label><input class="field" id="forcejoin-sort" type="number" value="0">
+    <label>Status</label>
+    <select class="field" id="forcejoin-status"><option value="active">Active</option><option value="inactive">Inactive</option></select>
+    <button class="btn btn-primary btn-block" id="save-forcejoin-btn" style="margin-top:8px;">Save Channel</button>
+  </div>
+</div>
+
 <div id="balanceModal" class="modal center">
   <div class="modal-content modal-form">
     <div class="modal-head"><h3 class="card-title" style="margin:0;">Adjust Balance</h3><span class="close-button" onclick="closeModal('balanceModal')">&times;</span></div>
@@ -307,6 +345,6 @@
   </div>
 </div>
 
-<script src="assets/js/admin.js?v=9"></script>
+<script src="assets/js/admin.js?v=10"></script>
 </body>
 </html>
