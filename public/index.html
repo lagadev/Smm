@@ -7,7 +7,7 @@
 
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="assets/css/style.css?v=9">
+<link rel="stylesheet" href="assets/css/style.css?v=10">
 
 <script>
   (function(){
@@ -26,6 +26,19 @@
   <div id="preloader-percentage">0%</div>
 </div>
 <div id="preloader-footer"><a href="#" id="preloader-channel-link" target="_blank">Powered by Amar SMM</a></div>
+
+<div id="force-join-gate" class="hidden">
+  <div class="fjg-icon"><i class="fa-solid fa-lock"></i></div>
+  <h1 class="fjg-title">Access Required</h1>
+  <p class="fjg-sub">Join our official channels to verify your identity and unlock the application.</p>
+  <div class="fjg-list" id="fjg-list"></div>
+  <div class="fjg-bottom">
+    <button class="btn fjg-verify-btn" id="fjg-verify-btn">
+      <span class="button-text">Verify &amp; Continue</span>
+      <div class="spinner hidden"></div>
+    </button>
+  </div>
+</div>
 
 <div class="container">
 
@@ -261,6 +274,6 @@
   </div>
 </div>
 
-<script src="assets/js/app.js?v=9"></script>
+<script src="assets/js/app.js?v=10"></script>
 </body>
 </html>
