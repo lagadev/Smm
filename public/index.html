@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>SMM API Center</title>
+<title>Amar SMM</title>
 
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="assets/css/style.css?v=8">
+<link rel="stylesheet" href="assets/css/style.css?v=9">
 
 <script>
   (function(){
@@ -22,18 +22,18 @@
 <body>
 
 <div id="preloader">
-  <div class="preloader-mark">TG</div>
+  <div class="preloader-mark">AS</div>
   <div id="preloader-percentage">0%</div>
 </div>
-<div id="preloader-footer"><a href="#" id="preloader-channel-link" target="_blank">Powered by SMM API Center</a></div>
+<div id="preloader-footer"><a href="#" id="preloader-channel-link" target="_blank">Powered by Amar SMM</a></div>
 
 <div class="container">
 
   <!-- ===== Top bar ===== -->
   <div class="topbar">
     <div class="brand">
-      <div class="brand-mark">TG</div>
-      <div class="brand-name" id="brand-name-text">SMM API Center</div>
+      <div class="brand-mark">AS</div>
+      <div class="brand-name" id="brand-name-text">Amar SMM</div>
     </div>
     <div id="profile-pic"><i class="fa-solid fa-user"></i></div>
   </div>
@@ -76,21 +76,10 @@
         </div>
 
         <div>
-          <div class="step-label">Category</div>
-          <div class="dd" id="category-dd">
-            <button type="button" class="dd-header" id="category-dd-header" disabled>
-              <span class="dd-header-content"><span class="dd-placeholder">Select a platform first</span></span>
-              <i class="fa-solid fa-chevron-down"></i>
-            </button>
-            <div class="dd-list hidden" id="category-dd-list"></div>
-          </div>
-        </div>
-
-        <div>
           <div class="step-label">Service</div>
           <div class="dd" id="service-dd">
             <button type="button" class="dd-header" id="service-dd-header" disabled>
-              <span class="dd-header-content"><span class="dd-placeholder">Select a category first</span></span>
+              <span class="dd-header-content"><span class="dd-placeholder">Select a platform first</span></span>
               <i class="fa-solid fa-chevron-down"></i>
             </button>
             <div class="dd-list hidden" id="service-dd-list"></div>
@@ -142,64 +131,37 @@
     </div>
   </section>
 
-  <!-- ===== ADD FUNDS VIEW — unique step flow: amount -> method -> reference ===== -->
+  <!-- ===== ADD FUNDS VIEW — premium single-step automatic gateway checkout ===== -->
   <section id="view-funds" class="view hidden">
-    <div class="balance-card balance-card-sm">
-      <div class="balance-label">Wallet Balance</div>
-      <div class="balance-amount"><span class="currency-symbol">৳</span><span class="total-balance-mirror">0.00000000</span><small class="currency-unit">BDT</small></div>
+    <div class="funds-hero">
+      <div class="funds-hero-glow"></div>
+      <div class="funds-hero-badge"><i class="fa-solid fa-bolt"></i> Instant &amp; Automatic</div>
+      <div class="funds-hero-label">Wallet Balance</div>
+      <div class="balance-amount funds-hero-balance"><span class="currency-symbol">৳</span><span class="total-balance-mirror">0.00000000</span><small class="currency-unit">BDT</small></div>
+    </div>
+
+    <div class="card funds-card-premium">
+      <div class="amount-hero">
+        <div class="amount-hero-label">Enter Amount</div>
+        <div class="amount-hero-input-wrap">
+          <span class="amount-hero-sym" id="funds-currency-sym">৳</span>
+          <input class="amount-hero-input" id="funds-amount-input" type="number" inputmode="decimal" placeholder="0">
+        </div>
+        <div class="amount-chip-row" id="funds-amount-chips"></div>
+      </div>
+
+      <button class="btn btn-submit btn-block funds-pay-btn" id="funds-pay-btn" disabled>
+        <i class="fa-solid fa-lock"></i>
+        <span class="button-text">Pay Securely Now</span>
+        <div class="spinner hidden"></div>
+      </button>
+
+      <div class="funds-secure-note"><i class="fa-solid fa-shield-halved"></i> Payments are verified automatically — your balance updates instantly, no waiting on approval.</div>
     </div>
 
     <div class="card">
-      <div class="funds-stepper">
-        <div class="fs-dot active" id="fs-dot-1"></div>
-        <div class="fs-dot" id="fs-dot-2"></div>
-        <div class="fs-dot" id="fs-dot-3"></div>
-      </div>
-
-      <!-- Step 1: amount -->
-      <div id="funds-step-1">
-        <div class="amount-hero">
-          <div class="amount-hero-label">How much would you like to add?</div>
-          <div class="amount-hero-input-wrap">
-            <span class="amount-hero-sym" id="funds-currency-sym">৳</span>
-            <input class="amount-hero-input" id="funds-amount-input" type="number" inputmode="decimal" placeholder="0">
-          </div>
-          <div class="amount-chip-row" id="funds-amount-chips"></div>
-        </div>
-        <button class="btn btn-submit btn-block" id="funds-step1-next" disabled>Continue</button>
-      </div>
-
-      <!-- Step 2: method -->
-      <div id="funds-step-2" class="hidden">
-        <h3 class="card-title">Choose a payment method</h3>
-        <p class="card-sub">Select where you'll send the payment from.</p>
-        <div class="method-grid" id="funds-method-grid"></div>
-        <button class="btn btn-outline btn-block" style="margin-top:14px;" onclick="fundsGoStep(1)"><i class="fa-solid fa-arrow-left"></i> Back</button>
-        <button class="btn btn-submit btn-block" id="funds-step2-next" disabled style="margin-top:10px;">
-          <span class="button-text">Generate Deposit Request</span>
-          <div class="spinner hidden"></div>
-        </button>
-      </div>
-
-      <!-- Step 3: reference / confirmation -->
-      <div id="funds-step-3" class="hidden">
-        <h3 class="card-title">Send payment &amp; wait for approval</h3>
-        <p class="card-sub">Send the exact amount using the method below, including your reference code in the payment note. Your admin will confirm it shortly.</p>
-        <div class="ref-box">
-          <div class="ref-box-label">Your reference code</div>
-          <div class="ref-box-code" id="funds-ref-code">DEP-XXXXXXXX</div>
-          <div class="ref-box-copy"><button class="btn btn-sm btn-ghost" id="funds-copy-ref"><i class="fa-solid fa-copy"></i> Copy code</button></div>
-        </div>
-        <div class="deposit-summary-row"><span>Amount</span><strong id="funds-summary-amount">—</strong></div>
-        <div class="deposit-summary-row"><span>Method</span><strong id="funds-summary-method">—</strong></div>
-        <div class="deposit-summary-row"><span>Status</span><strong><span class="status-badge pending">Pending</span></strong></div>
-        <div class="deposit-instructions" id="funds-instructions"></div>
-        <button class="btn btn-primary btn-block" style="margin-top:16px;" onclick="fundsReset()"><i class="fa-solid fa-plus"></i> New Deposit Request</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3 class="card-title">My Deposit Requests</h3>
+      <h3 class="card-title">Payment History</h3>
+      <p class="card-sub" style="margin-top:-8px;">Only successful, verified payments appear here.</p>
       <div id="deposit-requests-list"></div>
     </div>
   </section>
@@ -230,14 +192,24 @@
       </div>
     </div>
 
-    <button class="fab-card" id="api-docs-button">
-      <div class="fab-icon"><i class="fa-solid fa-book"></i></div>
-      <div class="fab-text">
-        <div class="fab-title">API Documentation</div>
-        <div class="fab-sub">Full guide to placing orders via API</div>
+    <div class="referral-card" id="referral-card">
+      <div class="ref-card-glow"></div>
+      <div class="ref-card-top">
+        <div class="ref-card-icon"><i class="fa-solid fa-gift"></i></div>
+        <div>
+          <div class="ref-card-title">Refer &amp; Earn</div>
+          <div class="ref-card-sub" id="ref-bonus-text">Invite friends and earn together</div>
+        </div>
       </div>
-      <i class="fa-solid fa-chevron-right text-dim"></i>
-    </button>
+      <div class="ref-link-row">
+        <input type="text" id="ref-link-input" readonly value="Loading your link…">
+        <button class="btn btn-sm btn-primary" id="ref-copy-btn" title="Copy link"><i class="fa-solid fa-copy"></i></button>
+      </div>
+      <div class="ref-stats-row">
+        <div class="ref-stat"><div class="ref-stat-value" id="ref-count">0</div><div class="ref-stat-label">Friends Joined</div></div>
+        <div class="ref-stat"><div class="ref-stat-value" id="ref-earnings">0.00</div><div class="ref-stat-label">Total Earned</div></div>
+      </div>
+    </div>
 
     <div class="card">
       <div class="pill-row history-tabs-row">
@@ -263,13 +235,6 @@
     </div>
   </section>
 
-  <!-- ===== DOCS VIEW (rendered in-app from a JS template, no extra file) ===== -->
-  <section id="view-docs" class="view hidden">
-    <div class="docs-back-row">
-      <button class="btn btn-sm btn-ghost" onclick="switchView('profile')"><i class="fa-solid fa-arrow-left"></i> Back</button>
-    </div>
-    <div id="docs-content" class="card"></div>
-  </section>
 
 </div>
 
@@ -296,6 +261,6 @@
   </div>
 </div>
 
-<script src="assets/js/app.js?v=8"></script>
+<script src="assets/js/app.js?v=9"></script>
 </body>
 </html>
