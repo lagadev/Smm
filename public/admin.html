@@ -3,16 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SMM API Center — Admin</title>
+<title>Amar SMM — Admin</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="assets/css/style.css?v=8">
+<link rel="stylesheet" href="assets/css/style.css?v=9">
 </head>
 <body class="admin-body">
 
 <!-- ===== Login ===== -->
 <div id="admin-login">
   <div class="login-card">
-    <div class="brand-mark" style="margin:0 auto 16px;">TG</div>
+    <div class="brand-mark" style="margin:0 auto 16px;">AS</div>
     <h2>Admin Login</h2>
     <p>Enter your admin password to continue.</p>
     <input class="field" type="password" id="login-password" placeholder="Admin password">
@@ -24,14 +24,13 @@
 <!-- ===== Shell ===== -->
 <div class="admin-shell hidden" id="admin-shell">
   <aside class="sidebar" id="sidebar">
-    <div class="brand"><div class="brand-mark">TG</div></div>
+    <div class="brand"><div class="brand-mark">AS</div></div>
     <button class="side-link active" data-tab="dashboard"><i class="fa-solid fa-gauge"></i> Dashboard</button>
     <button class="side-link" data-tab="platforms"><i class="fa-solid fa-shapes"></i> Platforms</button>
     <button class="side-link" data-tab="categories"><i class="fa-solid fa-layer-group"></i> Categories</button>
     <button class="side-link" data-tab="services"><i class="fa-solid fa-list-check"></i> Services</button>
     <button class="side-link" data-tab="orders"><i class="fa-solid fa-bag-shopping"></i> Orders</button>
     <button class="side-link" data-tab="users"><i class="fa-solid fa-users"></i> Users</button>
-    <button class="side-link" data-tab="methods"><i class="fa-solid fa-money-check-dollar"></i> Payment Methods</button>
     <button class="side-link" data-tab="deposits"><i class="fa-solid fa-sack-dollar"></i> Deposits</button>
     <button class="side-link" data-tab="settings"><i class="fa-solid fa-gear"></i> Settings</button>
     <button class="side-link logout" id="logout-button"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</button>
@@ -125,30 +124,20 @@
       </div>
     </section>
 
-    <!-- Payment Methods -->
-    <section class="admin-tab" id="tab-methods">
-      <div class="panel">
-        <div class="panel-head"><h3>Payment Methods</h3><button class="btn btn-primary btn-sm" id="add-method-btn"><i class="fa-solid fa-plus"></i> Add Method</button></div>
-        <p class="card-sub" style="margin-top:-6px;">Shown as tappable cards in the Mini App's Add Funds flow. Account Info is what the user should send to (number / wallet address). Instructions show under the reference code.</p>
-        <div class="table-wrap"><table class="admin-table" id="methods-table"><thead><tr><th>#</th><th>Icon</th><th>Name</th><th>Order</th><th>Status</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
-      </div>
-    </section>
-
     <!-- Deposits -->
     <section class="admin-tab" id="tab-deposits">
       <div class="panel">
         <div class="panel-head">
-          <h3>Deposit Requests</h3>
+          <h3>Deposits</h3>
           <input class="field search-input" id="deposit-search" placeholder="Search reference / user">
         </div>
         <div class="pill-row" id="deposit-status-pills">
           <button class="pill active" data-status=""><i class="fa-solid fa-list"></i> All</button>
-          <button class="pill" data-status="Pending"><i class="fa-solid fa-clock"></i> Pending</button>
           <button class="pill" data-status="Approved"><i class="fa-solid fa-check"></i> Approved</button>
-          <button class="pill" data-status="Rejected"><i class="fa-solid fa-xmark"></i> Rejected</button>
+          <button class="pill" data-status="Pending"><i class="fa-solid fa-clock"></i> Pending / Unpaid</button>
         </div>
-        <p class="card-sub" style="margin-top:-6px;">Approving credits the user's wallet automatically and can't be undone from here — reject instead if it was a mistake.</p>
-        <div class="table-wrap"><table class="admin-table" id="deposits-table"><thead><tr><th>Ref Code</th><th>User</th><th>Method</th><th>Amount</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+        <p class="card-sub" style="margin-top:-6px;">Fully automatic — the payment gateway's webhook verifies each payment and credits the wallet instantly. This log is read-only. Rows staying "Pending" simply mean the customer never completed payment at the gateway; nothing needs action here.</p>
+        <div class="table-wrap"><table class="admin-table" id="deposits-table"><thead><tr><th>Ref Code</th><th>User</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody></tbody></table></div>
       </div>
     </section>
 
@@ -179,6 +168,26 @@
         <p class="card-sub" style="margin-top:-8px;">Comma-separated quick-select chips shown on the amount step of Add Funds.</p>
         <div class="form-grid">
           <div class="full"><label>Quick Amounts</label><input class="field" id="set-deposit_quick_amounts" placeholder="500,1000,2000,5000,10000"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3 style="margin:0;">Automatic Payment Gateway</h3></div>
+        <p class="card-sub" style="margin-top:-8px;">Add Funds is fully automatic — a customer enters an amount, is redirected to your gateway, and the gateway's webhook credits their wallet the instant payment is verified. No manual approval needed.</p>
+        <div class="form-grid">
+          <div class="full"><label>Gateway API URL</label><input class="field" id="set-gateway_api_url" placeholder="https://uglypay.devugly.workers.dev/api/invoices"></div>
+          <div class="full"><label>Gateway API Key (also used to verify webhook signatures)</label><input class="field" id="set-gateway_api_key" type="password"></div>
+          <div class="full"><label>Site URL (used to build the webhook callback — leave blank to auto-detect)</label><input class="field" id="set-site_url" placeholder="https://yoursite.com"></div>
+        </div>
+        <p class="card-sub" style="margin:10px 0 0;">Point your gateway's webhook at: <code>&lt;Site URL&gt;/api/webhook/gateway</code></p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3 style="margin:0;">Refer &amp; Earn</h3></div>
+        <p class="card-sub" style="margin-top:-8px;">Every user gets a referral link. When someone they refer makes a deposit, the referrer earns a % bonus automatically.</p>
+        <div class="form-grid">
+          <div><label>Bot Username (no @, used to build the referral link)</label><input class="field" id="set-bot_username" placeholder="AmarSMMBot"></div>
+          <div><label>Referral Bonus %</label><input class="field" id="set-referral_bonus_percent" type="number" step="0.01" placeholder="e.g. 5"></div>
         </div>
       </div>
 
@@ -280,34 +289,6 @@
   </div>
 </div>
 
-<div id="methodModal" class="modal center">
-  <div class="modal-content modal-form">
-    <div class="modal-head"><h3 class="card-title" id="method-modal-title" style="margin:0;">Add Payment Method</h3><span class="close-button" onclick="closeModal('methodModal')">&times;</span></div>
-    <input type="hidden" id="method-id">
-    <label>Name</label><input class="field" id="method-name" placeholder="e.g. bKash">
-    <label>Icon (Font Awesome class)</label><input class="field" id="method-icon" placeholder="fa-solid fa-mobile-screen">
-    <label>Account Info (number / wallet address, shown to user)</label><textarea class="field" id="method-account" rows="2" placeholder="e.g. 01XXXXXXXXX (Personal)"></textarea>
-    <label>Instructions</label><textarea class="field" id="method-instructions" rows="3" placeholder="e.g. Send Money (not Payment), then keep your reference code in the note."></textarea>
-    <label>Sort Order</label><input class="field" id="method-sort" type="number" value="0">
-    <label>Status</label>
-    <select class="field" id="method-status"><option value="active">Active</option><option value="inactive">Inactive</option></select>
-    <button class="btn btn-primary btn-block" id="save-method-btn" style="margin-top:8px;">Save Method</button>
-  </div>
-</div>
-
-<div id="depositModal" class="modal center">
-  <div class="modal-content modal-form">
-    <div class="modal-head"><h3 class="card-title" style="margin:0;">Review Deposit</h3><span class="close-button" onclick="closeModal('depositModal')">&times;</span></div>
-    <input type="hidden" id="deposit-id">
-    <p class="card-sub" id="deposit-summary"></p>
-    <label>Admin Note (optional)</label><input class="field" id="deposit-note" placeholder="Reason / transaction ID">
-    <div style="display:flex;gap:10px;margin-top:8px;">
-      <button class="btn btn-outline btn-block" id="reject-deposit-btn" style="color:var(--danger);border-color:var(--danger);">Reject</button>
-      <button class="btn btn-primary btn-block" id="approve-deposit-btn">Approve &amp; Credit</button>
-    </div>
-  </div>
-</div>
-
 <div id="balanceModal" class="modal center">
   <div class="modal-content modal-form">
     <div class="modal-head"><h3 class="card-title" style="margin:0;">Adjust Balance</h3><span class="close-button" onclick="closeModal('balanceModal')">&times;</span></div>
@@ -326,6 +307,6 @@
   </div>
 </div>
 
-<script src="assets/js/admin.js?v=8"></script>
+<script src="assets/js/admin.js?v=9"></script>
 </body>
 </html>
