@@ -179,68 +179,93 @@ function mapProviderStatus(providerStatus) {
 }
 // ---------- Auto payment gateway (UglyPay-style) ----------
 async function createGatewayInvoice(db, amount, reference, callbackUrl) {
-  const apiUrl = (await getSetting(db, "gateway_api_url")) || "https://uglypay.devugly.workers.dev/api/invoices";
+  const apiUrl =
+    (await getSetting(db, "gateway_api_url")) ||
+    "https://uglypay.devugly.workers.dev/api/invoices";
+
   const apiKey = await getSetting(db, "gateway_api_key");
-  if (!apiKey) return { error: "Payment gateway is not configured yet. Ask the admin to set the Gateway API Key in Settings." };
+
+  if (!apiKey) {
+    return {
+      error:
+        "Payment gateway is not configured yet. Ask the admin to set the Gateway API Key in Settings.",
+    };
+  }
+
   try {
     const res = await fetch(apiUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
-      body: JSON.stringify({ amount, reference, callbackUrl }),
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        amount: amount,
+        reference: reference,
+        callbackUrl: callbackUrl,
+      }),
     });
-    const data = await res.json().catch(() => null);
-    if (!data || !data.payUrl) return { error: (data && data.error) || "The payment gateway did not return a payment link" };
-    return { payUrl: data.payUrl, invoiceId: data.id || data.invoiceId || null };
+
+    const rawText = await res.text();
+
+    let data = null;
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      return {
+        error: `Payment gateway returned invalid JSON (HTTP ${res.status})`,
+      };
+    }
+
+    if (!res.ok) {
+      return {
+        error:
+          data?.error ||
+          data?.message ||
+          `Payment gateway request failed (HTTP ${res.status})`,
+      };
+    }
+
+    // Gateway normally returns payUrl.
+    // Keep fallbacks so small response-format differences do not break invoices.
+    const payUrl =
+      data?.payUrl ||
+      data?.pay_url ||
+      data?.paymentUrl ||
+      data?.payment_url ||
+      data?.url ||
+      data?.invoice?.payUrl ||
+      data?.invoice?.pay_url ||
+      data?.data?.payUrl ||
+      data?.data?.pay_url;
+
+    const invoiceId =
+      data?.id ||
+      data?.invoiceId ||
+      data?.invoice_id ||
+      data?.invoice?.id ||
+      data?.data?.id ||
+      data?.data?.invoiceId ||
+      null;
+
+    if (!payUrl) {
+      return {
+        error:
+          data?.error ||
+          data?.message ||
+          "The payment gateway did not return a payment link",
+      };
+    }
+
+    return {
+      payUrl: String(payUrl),
+      invoiceId: invoiceId ? String(invoiceId) : null,
+    };
   } catch (e) {
-    return { error: `Payment gateway request failed: ${e.message}` };
+    return {
+      error: `Payment gateway request failed: ${e.message}`,
+    };
   }
-}
-
-async function refundOrder(db, order, note) {
-  await db.prepare("UPDATE users SET balance = balance + ? WHERE id = ?").bind(order.charge, order.user_id).run();
-  await db.prepare("INSERT INTO transactions (user_id, type, amount, note) VALUES (?, 'admin_add', ?, ?)").bind(order.user_id, order.charge, note).run();
-}
-
-async function createOrder(db, user, servicePublicId, link, quantity, source) {
-  const service = await db.prepare(
-    `SELECT s.*, c.name AS category_name, p.name AS platform_name
-     FROM services s
-     JOIN categories c ON c.id = s.category_id
-     JOIN platforms p ON p.id = c.platform_id
-     WHERE s.public_id = ? AND s.status = 'active'`
-  ).bind(servicePublicId).first();
-  if (!service) return { error: "Service not found or inactive" };
-
-  const qty = parseInt(quantity, 10);
-  if (!Number.isFinite(qty) || qty < service.min_qty || qty > service.max_qty) {
-    return { error: `Quantity must be between ${service.min_qty} and ${service.max_qty}` };
-  }
-  if (!/^https?:\/\//i.test(link || "")) return { error: "Please provide a valid link starting with http(s)://" };
-
-  const charge = Math.round(((service.rate * qty) / 1000) * 1e8) / 1e8;
-  if (charge <= 0) return { error: "Invalid charge calculated" };
-  if (user.balance < charge) return { error: "Insufficient balance" };
-
-  await db.prepare("UPDATE users SET balance = balance - ? WHERE id = ?").bind(charge, user.id).run();
-  const refillAvailable = service.refill_days > 0 ? 1 : 0;
-  const insert = await db.prepare(
-    `INSERT INTO orders (user_id, service_id, service_public_id, service_name, category_name, platform_name, link, quantity, charge, status, source, refill_available)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?)`
-  ).bind(user.id, service.id, service.public_id, service.name, service.category_name, service.platform_name, link, qty, charge, source, refillAvailable).run();
-  const orderId = insert.meta.last_row_id;
-  await db.prepare("INSERT INTO transactions (user_id, type, amount, note) VALUES (?, 'order', ?, ?)")
-    .bind(user.id, -charge, `Order #${orderId}: ${service.name}`).run();
-
-  const providerResult = await placeProviderOrder(db, service, link, qty);
-  if (providerResult && providerResult.providerOrderId) {
-    await db.prepare("UPDATE orders SET status = 'Processing', provider_order_id = ? WHERE id = ?").bind(providerResult.providerOrderId, orderId).run();
-  } else if (providerResult && providerResult.error) {
-    await db.prepare("UPDATE orders SET provider_error = ? WHERE id = ?").bind(providerResult.error, orderId).run();
-  }
-
-  const order = await db.prepare("SELECT * FROM orders WHERE id = ?").bind(orderId).first();
-  const updatedUser = await db.prepare("SELECT * FROM users WHERE id = ?").bind(user.id).first();
-  return { order, balance: updatedUser.balance };
 }
 
 // ================= ROUTER =================
