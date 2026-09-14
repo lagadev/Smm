@@ -122,8 +122,8 @@ button{ font-family:inherit; }
 .step-label{ font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-dim); margin-bottom:8px; }
 
 /* Platform icon grid */
-.platform-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
-.platform-item{ background:var(--dark); border:none; border-radius:14px; aspect-ratio:1/1; display:flex; align-items:center; justify-content:center; color:#fff; font-size:20px; cursor:pointer; position:relative; transition:transform .12s ease, box-shadow .12s ease; }
+.platform-grid{ display:grid; grid-template-columns:repeat(5,1fr); gap:8px; }
+.platform-item{ background:linear-gradient(155deg, #34304C, var(--dark)); border:none; border-radius:13px; aspect-ratio:1/1; display:flex; align-items:center; justify-content:center; color:#fff; font-size:17px; cursor:pointer; position:relative; transition:transform .12s ease, box-shadow .12s ease; }
 .platform-item i{ pointer-events:none; }
 .platform-item:active{ transform:scale(.94); }
 .platform-item.selected{ box-shadow:0 0 0 3px var(--primary), 0 8px 18px rgba(13,110,253,.35); background:var(--primary-dim); }
@@ -237,11 +237,25 @@ h2.section-title i{ color:var(--primary); }
 .brand-mark img, .preloader-mark img{ width:100%; height:100%; object-fit:contain; border-radius:inherit; }
 
 /* =========================================================
-   Add Funds — unique stepper style (amount -> method -> reference)
+   Add Funds — premium single-step automatic gateway checkout
    ========================================================= */
-.funds-stepper{ display:flex; align-items:center; gap:6px; margin-bottom:18px; }
-.funds-stepper .fs-dot{ flex:1; height:4px; border-radius:99px; background:var(--surface-3); transition:background .2s ease; }
-.funds-stepper .fs-dot.done, .funds-stepper .fs-dot.active{ background:var(--primary); }
+@keyframes glowPulse{ 0%,100%{ opacity:.55; transform:scale(1); } 50%{ opacity:1; transform:scale(1.08); } }
+@keyframes shimmer{ 0%{ background-position:-200% 0; } 100%{ background-position:200% 0; } }
+
+.funds-hero{ position:relative; overflow:hidden; border-radius:var(--radius-lg); padding:26px 22px; margin-bottom:14px; text-align:center;
+  background:linear-gradient(135deg, #0B1230 0%, #14205C 45%, #0D6EFD 100%); color:#fff; animation:fadeUp .45s ease-out;
+  box-shadow:0 20px 40px -14px rgba(13,32,110,.55); }
+.funds-hero-glow{ position:absolute; width:220px; height:220px; border-radius:50%; background:radial-gradient(circle, rgba(255,255,255,.35), transparent 70%);
+  top:-90px; right:-60px; filter:blur(6px); animation:glowPulse 3.5s ease-in-out infinite; }
+.funds-hero-badge{ position:relative; display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:800; letter-spacing:.04em; text-transform:uppercase;
+  background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.3); color:#fff; padding:6px 14px; border-radius:999px; margin-bottom:14px; }
+.funds-hero-label{ position:relative; font-size:12.5px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:rgba(255,255,255,.75); }
+.funds-hero-balance{ position:relative; font-size:32px; margin-top:6px; }
+
+.funds-card-premium{ position:relative; border:1px solid var(--border); overflow:hidden; }
+.funds-pay-btn{ background:linear-gradient(135deg, #0D6EFD, #6D28D9); box-shadow:0 14px 28px -8px rgba(109,40,217,.45); font-size:15.5px; }
+.funds-secure-note{ margin-top:14px; text-align:center; font-size:11.5px; color:var(--text-faint); display:flex; align-items:center; justify-content:center; gap:6px; line-height:1.5; }
+.funds-secure-note i{ color:var(--success); }
 
 .amount-hero{ text-align:center; padding:10px 0 20px; }
 .amount-hero-label{ font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-dim); margin-bottom:10px; }
@@ -253,21 +267,29 @@ h2.section-title i{ color:var(--primary); }
 .amount-chip{ padding:9px 16px; border-radius:999px; background:var(--surface-2); border:1px solid var(--border); font-size:13px; font-weight:700; color:var(--text-dim); cursor:pointer; }
 .amount-chip.active{ background:var(--primary); color:#fff; border-color:var(--primary); }
 
-.method-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
-.method-card{ display:flex; align-items:center; gap:10px; background:var(--surface-2); border:2px solid var(--border); border-radius:14px; padding:14px; cursor:pointer; transition:all .15s ease; }
-.method-card:hover{ border-color:var(--primary); }
-.method-card.selected{ border-color:var(--primary); background:var(--primary-tint); }
-.method-card .m-icon{ width:36px; height:36px; border-radius:10px; background:var(--dark); color:#fff; display:flex; align-items:center; justify-content:center; font-size:15px; flex:0 0 auto; }
-.method-card .m-name{ font-weight:700; font-size:13.5px; }
-
-.ref-box{ border:2px dashed var(--primary); border-radius:16px; background:var(--primary-tint); padding:22px 18px; text-align:center; margin:6px 0 16px; }
-.ref-box-label{ font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--primary-dim); margin-bottom:10px; }
-.ref-box-code{ font-family:var(--font-display); font-size:26px; font-weight:800; letter-spacing:.06em; color:var(--text); word-break:break-all; }
-.ref-box-copy{ margin-top:14px; display:inline-flex; }
 .deposit-summary-row{ display:flex; justify-content:space-between; font-size:13.5px; padding:9px 0; border-bottom:1px solid var(--border); color:var(--text-dim); }
 .deposit-summary-row:last-child{ border-bottom:none; }
 .deposit-summary-row strong{ color:var(--text); font-weight:700; }
-.deposit-instructions{ white-space:pre-wrap; font-size:13px; line-height:1.7; color:var(--text-dim); background:var(--surface-2); border-radius:12px; padding:14px 16px; margin-top:10px; }
+
+/* =========================================================
+   Refer & Earn — premium card
+   ========================================================= */
+.referral-card{ position:relative; overflow:hidden; border-radius:var(--radius-lg); padding:20px; margin-bottom:16px; color:#fff; animation:fadeUp .5s ease-out;
+  background:linear-gradient(140deg, #6D28D9 0%, #0D6EFD 55%, #059669 130%); box-shadow:0 16px 32px -12px rgba(109,40,217,.45); }
+.ref-card-glow{ position:absolute; inset:0; background:linear-gradient(120deg, transparent 30%, rgba(255,255,255,.18) 45%, transparent 60%);
+  background-size:200% 100%; animation:shimmer 4.5s linear infinite; pointer-events:none; }
+.ref-card-top{ position:relative; display:flex; align-items:center; gap:12px; margin-bottom:16px; }
+.ref-card-icon{ width:42px; height:42px; border-radius:12px; background:rgba(255,255,255,.18); border:1px solid rgba(255,255,255,.3); display:flex; align-items:center; justify-content:center; font-size:18px; flex:0 0 auto; }
+.ref-card-title{ font-family:var(--font-display); font-weight:800; font-size:15.5px; }
+.ref-card-sub{ font-size:12px; color:rgba(255,255,255,.85); margin-top:2px; }
+.ref-link-row{ position:relative; display:flex; align-items:center; gap:8px; background:rgba(255,255,255,.14); border:1px solid rgba(255,255,255,.28); border-radius:12px; padding:6px 6px 6px 14px; margin-bottom:14px; }
+.ref-link-row input{ flex:1; min-width:0; border:none; background:transparent; outline:none; color:#fff; font-size:12.5px; font-family:var(--font-body); text-overflow:ellipsis; }
+.ref-link-row input::placeholder{ color:rgba(255,255,255,.65); }
+.ref-link-row .btn-primary{ background:#fff; color:var(--primary-dim); flex:0 0 auto; padding:9px 12px; }
+.ref-stats-row{ position:relative; display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.ref-stat{ background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.22); border-radius:12px; padding:12px; text-align:center; }
+.ref-stat-value{ font-family:var(--font-display); font-weight:800; font-size:17px; }
+.ref-stat-label{ font-size:10.5px; color:rgba(255,255,255,.8); margin-top:2px; text-transform:uppercase; letter-spacing:.03em; }
 
 /* =========================================================
    Admin panel (dark) — same file, scoped to body.admin-body
