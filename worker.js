@@ -18,9 +18,10 @@
  *   POST /api/order/refill                { telegram_id, order_id }
  *   GET  /api/orders?telegram_id=
  *   GET  /api/transactions?telegram_id=
- *   GET  /api/deposit/methods
- *   POST /api/deposit/request             { telegram_id, method_id, amount }
- *   GET  /api/deposit/requests?telegram_id=
+ *   GET  /api/user/referral?telegram_id=
+ *   POST /api/deposit/request             { telegram_id, amount }  -> auto-creates a gateway invoice, returns pay_url
+ *   GET  /api/deposit/requests?telegram_id=                        -> only ever returns webhook-confirmed (Approved) deposits
+ *   POST /api/webhook/gateway                                      -> payment gateway calls this to auto-credit balance
  *
  * Reseller / child API (see in-app Docs):
  *   POST /api/v2   { key, action: services|add|status|refill|refill_status|cancel|balance, ... }
@@ -34,8 +35,7 @@
  *   POST /api/admin/services/reapply-markup         { markup_percent? }
  *   GET/PUT /api/admin/orders(/:id)   POST /api/admin/orders/:id/sync
  *   GET/PUT /api/admin/users(/:id)    GET /api/admin/users/:id/detail
- *   GET/POST/PUT/DELETE /api/admin/payment-methods(/:id)
- *   GET /api/admin/deposits            PUT /api/admin/deposits/:id   { status, admin_note? }
+ *   GET /api/admin/deposits            PUT /api/admin/deposits/:id   { status, admin_note? }  (manual override only)
  *   GET/PUT /api/admin/settings
  *
  * Cron (wrangler.jsonc triggers.crons): "* * * * *" — syncs Processing orders
@@ -123,13 +123,21 @@ async function requireAdmin(request, env) {
 }
 
 // ---------- User helpers ----------
-async function getOrCreateUser(db, tgUser) {
+async function getOrCreateUser(db, tgUser, startParam) {
   const telegram_id = String(tgUser.id);
   let user = await db.prepare("SELECT * FROM users WHERE telegram_id = ?").bind(telegram_id).first();
   if (!user) {
     const token = genToken();
-    await db.prepare(`INSERT INTO users (telegram_id, username, first_name, photo_url, api_token) VALUES (?, ?, ?, ?, ?)`)
-      .bind(telegram_id, tgUser.username || null, tgUser.first_name || "User", tgUser.photo_url || null, token).run();
+    let referredBy = null;
+    if (startParam && String(startParam).startsWith("ref_")) {
+      const refId = String(startParam).slice(4).trim();
+      if (refId && refId !== telegram_id) {
+        const refUser = await db.prepare("SELECT id FROM users WHERE telegram_id = ?").bind(refId).first();
+        if (refUser) referredBy = refId;
+      }
+    }
+    await db.prepare(`INSERT INTO users (telegram_id, username, first_name, photo_url, api_token, referred_by) VALUES (?, ?, ?, ?, ?, ?)`)
+      .bind(telegram_id, tgUser.username || null, tgUser.first_name || "User", tgUser.photo_url || null, token, referredBy).run();
     user = await db.prepare("SELECT * FROM users WHERE telegram_id = ?").bind(telegram_id).first();
   } else {
     if (!user.api_token) await db.prepare("UPDATE users SET api_token = ? WHERE id = ?").bind(genToken(), user.id).run();
@@ -169,6 +177,25 @@ function mapProviderStatus(providerStatus) {
   if (s.includes("process") || s.includes("in progress")) return "Processing";
   return null;
 }
+// ---------- Auto payment gateway (UglyPay-style) ----------
+async function createGatewayInvoice(db, amount, reference, callbackUrl) {
+  const apiUrl = (await getSetting(db, "gateway_api_url")) || "https://uglypay.devugly.workers.dev/api/invoices";
+  const apiKey = await getSetting(db, "gateway_api_key");
+  if (!apiKey) return { error: "Payment gateway is not configured yet. Ask the admin to set the Gateway API Key in Settings." };
+  try {
+    const res = await fetch(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+      body: JSON.stringify({ amount, reference, callbackUrl }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!data || !data.payUrl) return { error: (data && data.error) || "The payment gateway did not return a payment link" };
+    return { payUrl: data.payUrl, invoiceId: data.id || data.invoiceId || null };
+  } catch (e) {
+    return { error: `Payment gateway request failed: ${e.message}` };
+  }
+}
+
 async function refundOrder(db, order, note) {
   await db.prepare("UPDATE users SET balance = balance + ? WHERE id = ?").bind(order.charge, order.user_id).run();
   await db.prepare("INSERT INTO transactions (user_id, type, amount, note) VALUES (?, 'admin_add', ?, ?)").bind(order.user_id, order.charge, note).run();
@@ -305,9 +332,27 @@ async function handleApi(request, env, url, pathname, ctx) {
     } else {
       return err("Missing initData — make sure Bot Token is set in Admin → Settings", 400);
     }
-    const user = await getOrCreateUser(db, tgUser);
+    const user = await getOrCreateUser(db, tgUser, body.start_param);
     if (user.banned) return err("Your account has been suspended. Contact support.", 403);
     return json({ ok: true, user });
+  }
+
+  if (pathname === "/api/user/referral" && method === "GET") {
+    const tid = url.searchParams.get("telegram_id");
+    if (!tid) return err("telegram_id required");
+    const user = await db.prepare("SELECT * FROM users WHERE telegram_id = ?").bind(tid).first();
+    if (!user) return err("User not found", 404);
+    const countRow = await db.prepare("SELECT COUNT(*) AS c FROM users WHERE referred_by = ?").bind(tid).first();
+    const botUsername = await getSetting(db, "bot_username");
+    return json({
+      ok: true,
+      referral: {
+        link: botUsername ? `https://t.me/${botUsername}/app?startapp=ref_${tid}` : null,
+        referral_count: countRow.c,
+        referral_earnings: user.referral_earnings || 0,
+        bonus_percent: parseFloat((await getSetting(db, "referral_bonus_percent")) || "0"),
+      },
+    });
   }
 
   if (pathname === "/api/user" && method === "GET") {
@@ -361,9 +406,20 @@ async function handleApi(request, env, url, pathname, ctx) {
 
   if (pathname === "/api/services" && method === "GET") {
     const categoryId = url.searchParams.get("category_id");
-    const stmt = categoryId
-      ? db.prepare("SELECT * FROM services WHERE status = 'active' AND category_id = ? ORDER BY sort_order ASC, id ASC").bind(categoryId)
-      : db.prepare("SELECT * FROM services WHERE status = 'active' ORDER BY sort_order ASC, id ASC");
+    const platformId = url.searchParams.get("platform_id");
+    let stmt;
+    if (categoryId) {
+      stmt = db.prepare("SELECT * FROM services WHERE status = 'active' AND category_id = ? ORDER BY sort_order ASC, id ASC").bind(categoryId);
+    } else if (platformId) {
+      stmt = db.prepare(
+        `SELECT s.*, c.name AS category_name FROM services s
+         JOIN categories c ON c.id = s.category_id
+         WHERE s.status = 'active' AND c.status = 'active' AND c.platform_id = ?
+         ORDER BY c.sort_order ASC, s.sort_order ASC, s.id ASC`
+      ).bind(platformId);
+    } else {
+      stmt = db.prepare("SELECT * FROM services WHERE status = 'active' ORDER BY sort_order ASC, id ASC");
+    }
     const { results } = await stmt.all();
     return json({ ok: true, services: results });
   }
@@ -418,41 +474,95 @@ async function handleApi(request, env, url, pathname, ctx) {
     return json({ ok: true, transactions: results });
   }
 
-  // ---------- Deposits (Add Funds) ----------
-  if (pathname === "/api/deposit/methods" && method === "GET") {
-    const { results } = await db.prepare("SELECT * FROM payment_methods WHERE status = 'active' ORDER BY sort_order ASC, id ASC").all();
-    return json({ ok: true, methods: results });
-  }
-
+  // ---------- Deposits (Add Funds) — fully automatic via payment gateway ----------
   if (pathname === "/api/deposit/request" && method === "POST") {
     const body = await request.json().catch(() => ({}));
-    if (!body.telegram_id || !body.method_id || !body.amount) return err("telegram_id, method_id and amount required");
+    if (!body.telegram_id || !body.amount) return err("telegram_id and amount required");
     const amount = parseFloat(body.amount);
     if (!Number.isFinite(amount) || amount <= 0) return err("Enter a valid amount");
     const user = await db.prepare("SELECT * FROM users WHERE telegram_id = ?").bind(body.telegram_id).first();
     if (!user) return err("User not found", 404);
     if (user.banned) return err("Account suspended", 403);
-    const method = await db.prepare("SELECT * FROM payment_methods WHERE id = ? AND status = 'active'").bind(body.method_id).first();
-    if (!method) return err("Payment method not found", 404);
 
     let refCode, tries = 0;
     do { refCode = genRefCode(); tries++; } while (tries < 5 && await db.prepare("SELECT id FROM deposit_requests WHERE reference_code = ?").bind(refCode).first());
 
+    const siteUrl = await getSetting(db, "site_url");
+    const callbackUrl = `${(siteUrl || url.origin).replace(/\/$/, "")}/api/webhook/gateway`;
+    const invoice = await createGatewayInvoice(db, amount, refCode, callbackUrl);
+    if (invoice.error) return err(invoice.error, 502);
+
     const insert = await db.prepare(
-      "INSERT INTO deposit_requests (user_id, method_id, method_name, amount, reference_code, status) VALUES (?, ?, ?, ?, ?, 'Pending')"
-    ).bind(user.id, method.id, method.name, amount, refCode).run();
+      "INSERT INTO deposit_requests (user_id, method_id, method_name, amount, reference_code, status, provider_invoice_id) VALUES (?, NULL, 'Auto Gateway', ?, ?, 'Pending', ?)"
+    ).bind(user.id, amount, refCode, invoice.invoiceId).run();
 
     const request_row = await db.prepare("SELECT * FROM deposit_requests WHERE id = ?").bind(insert.meta.last_row_id).first();
-    return json({ ok: true, request: request_row, method });
+    return json({ ok: true, request: request_row, pay_url: invoice.payUrl });
   }
 
+  // Only ever returns webhook-confirmed (Approved) deposits — nothing stuck in Pending is shown.
   if (pathname === "/api/deposit/requests" && method === "GET") {
     const tid = url.searchParams.get("telegram_id");
     if (!tid) return err("telegram_id required");
     const user = await db.prepare("SELECT id FROM users WHERE telegram_id = ?").bind(tid).first();
     if (!user) return json({ ok: true, requests: [] });
-    const { results } = await db.prepare("SELECT * FROM deposit_requests WHERE user_id = ? ORDER BY created_at DESC LIMIT 50").bind(user.id).all();
+    const { results } = await db.prepare(
+      "SELECT * FROM deposit_requests WHERE user_id = ? AND status = 'Approved' ORDER BY updated_at DESC LIMIT 50"
+    ).bind(user.id).all();
     return json({ ok: true, requests: results });
+  }
+
+  // Gateway webhook — auto-credits balance the instant a payment is verified. No admin action needed.
+  if (pathname === "/api/webhook/gateway" && method === "POST") {
+    const rawBody = await request.text();
+    const signature = request.headers.get("x-signature") || "";
+    const gatewayKey = await getSetting(db, "gateway_api_key");
+    if (!gatewayKey) return err("Gateway not configured", 500);
+
+    const enc = new TextEncoder();
+    const hmacKey = await crypto.subtle.importKey("raw", enc.encode(gatewayKey), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    const sigBytes = await crypto.subtle.sign("HMAC", hmacKey, enc.encode(rawBody));
+    const expectedSig = [...new Uint8Array(sigBytes)].map((b) => b.toString(16).padStart(2, "0")).join("");
+    if (signature !== expectedSig) return err("Invalid signature", 401);
+
+    let payload;
+    try { payload = JSON.parse(rawBody); } catch { return err("Invalid payload", 400); }
+    const { event, reference, amount, netAmount, trxId } = payload;
+    if (event !== "invoice.verified") return json({ ok: true });
+    if (!reference) return err("Missing reference", 400);
+
+    const dep = await db.prepare("SELECT * FROM deposit_requests WHERE reference_code = ?").bind(reference).first();
+    if (!dep) return err("Unknown reference", 404);
+    if (dep.status === "Approved") return json({ ok: true }); // idempotent — already credited
+
+    const creditAmount = netAmount != null ? parseFloat(netAmount) : parseFloat(amount);
+    if (!Number.isFinite(creditAmount) || creditAmount <= 0) return err("Invalid amount in webhook payload", 400);
+
+    await db.prepare("UPDATE users SET balance = balance + ? WHERE id = ?").bind(creditAmount, dep.user_id).run();
+    await db.prepare("INSERT INTO transactions (user_id, type, amount, note) VALUES (?, 'deposit', ?, ?)")
+      .bind(dep.user_id, creditAmount, `Deposit ${dep.reference_code} via Auto Gateway${trxId ? ` (trx: ${trxId})` : ""}`).run();
+    await db.prepare("UPDATE deposit_requests SET status = 'Approved', admin_note = ?, updated_at = datetime('now') WHERE id = ?")
+      .bind(trxId ? `Auto-verified · trx ${trxId}` : "Auto-verified", dep.id).run();
+
+    // Referral bonus: credit the referrer a % of this deposit
+    const depositUser = await db.prepare("SELECT * FROM users WHERE id = ?").bind(dep.user_id).first();
+    if (depositUser && depositUser.referred_by) {
+      const bonusPercent = parseFloat((await getSetting(db, "referral_bonus_percent")) || "0");
+      if (bonusPercent > 0) {
+        const referrer = await db.prepare("SELECT * FROM users WHERE telegram_id = ?").bind(depositUser.referred_by).first();
+        if (referrer) {
+          const bonus = Math.round((creditAmount * bonusPercent / 100) * 1e8) / 1e8;
+          if (bonus > 0) {
+            await db.prepare("UPDATE users SET balance = balance + ?, referral_earnings = COALESCE(referral_earnings, 0) + ? WHERE id = ?")
+              .bind(bonus, bonus, referrer.id).run();
+            await db.prepare("INSERT INTO transactions (user_id, type, amount, note) VALUES (?, 'referral_bonus', ?, ?)")
+              .bind(referrer.id, bonus, `Referral bonus — ${depositUser.first_name || depositUser.telegram_id} made a deposit`).run();
+          }
+        }
+      }
+    }
+
+    return json({ ok: true });
   }
 
   // ---------- Reseller / child API ----------
@@ -824,28 +934,7 @@ async function handleAdmin(db, env, method, pathname, request, url) {
     return json({ ok: true, user, stats: { total_orders: orderStats.c, total_spent: orderStats.s, total_earned: earned.s }, recentOrders, recentTxns });
   }
 
-  // ---- payment methods ----
-  if (pathname === "/api/admin/payment-methods" && method === "GET") {
-    const { results } = await db.prepare("SELECT * FROM payment_methods ORDER BY sort_order ASC, id ASC").all();
-    return json({ ok: true, methods: results });
-  }
-  if (pathname === "/api/admin/payment-methods" && method === "POST") {
-    const b = await request.json().catch(() => ({}));
-    if (!b.name) return err("name required");
-    const res = await db.prepare("INSERT INTO payment_methods (name, icon, account_info, instructions, sort_order, status) VALUES (?, ?, ?, ?, ?, ?)")
-      .bind(b.name, b.icon || "fa-solid fa-wallet", b.account_info || null, b.instructions || null, b.sort_order || 0, b.status || "active").run();
-    return json({ ok: true, id: res.meta.last_row_id });
-  }
-  m = pathname.match(/^\/api\/admin\/payment-methods\/(\d+)$/);
-  if (m && method === "PUT") {
-    const b = await request.json().catch(() => ({}));
-    await db.prepare("UPDATE payment_methods SET name=?, icon=?, account_info=?, instructions=?, sort_order=?, status=? WHERE id=?")
-      .bind(b.name, b.icon || "fa-solid fa-wallet", b.account_info || null, b.instructions || null, b.sort_order ?? 0, b.status || "active", m[1]).run();
-    return json({ ok: true });
-  }
-  if (m && method === "DELETE") { await db.prepare("DELETE FROM payment_methods WHERE id = ?").bind(m[1]).run(); return json({ ok: true }); }
-
-  // ---- deposits ----
+  // ---- deposits (read-only log + manual override fallback if the gateway webhook ever fails) ----
   if (pathname === "/api/admin/deposits" && method === "GET") {
     const status = url.searchParams.get("status");
     const stmt = status
