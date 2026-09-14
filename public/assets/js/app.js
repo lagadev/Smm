@@ -1,5 +1,5 @@
 // =====================================================
-// Mini App front-end logic (v9) - Amar SMM
+// Mini App front-end logic (v10) - Amar SMM
 // =====================================================
 const API = ""; // same-origin Worker
 
@@ -49,8 +49,58 @@ function hidePreloader() {
   setTimeout(() => {
     el('preloader').style.display = 'none';
     el('preloader-footer').style.display = 'none';
-    document.querySelector('.container').style.display = 'block';
   }, 350);
+}
+function revealApp(){
+  document.querySelector('.container').style.display = 'block';
+}
+
+// ---------------- Force-Join gate ----------------
+async function fetchForceJoinGate(){
+  try{
+    const { enabled, channels } = await api('/api/force-join/status');
+    if (!enabled || !channels.length) return { blocked: false };
+    const verify = await api(`/api/force-join/verify?telegram_id=${state.user.telegram_id}`);
+    return { blocked: !verify.ok, channels };
+  }catch(e){
+    return { blocked: false }; // fail-open — a broken check should never lock everyone out
+  }
+}
+function showForceJoinGate(channels){
+  const list = el('fjg-list');
+  list.innerHTML = channels.map(c => `
+    <div class="fjg-item">
+      <div class="fjg-item-left">
+        <div class="fjg-item-icon"><i class="fa-brands fa-telegram"></i></div>
+        <div class="fjg-item-name">${escapeHTML(c.name)}</div>
+      </div>
+      <a class="fjg-join-btn" href="${escapeHTML(c.join_link)}" target="_blank"><span>Join</span> <i class="fa-solid fa-arrow-up-right-from-square"></i></a>
+    </div>`).join('');
+  el('force-join-gate').classList.remove('hidden');
+}
+async function verifyForceJoin(){
+  const btn = el('fjg-verify-btn');
+  btn.disabled = true;
+  btn.querySelector('.button-text').classList.add('hidden');
+  btn.querySelector('.spinner').classList.remove('hidden');
+  try{
+    const verify = await api(`/api/force-join/verify?telegram_id=${state.user.telegram_id}`);
+    if (verify.ok) {
+      haptic('success');
+      el('force-join-gate').classList.add('hidden');
+      revealApp();
+      await bootApp();
+    } else {
+      haptic('error');
+      safeAlert('Please join all the channels above, then tap Verify & Continue again.');
+    }
+  }catch(e){
+    safeAlert(e.message);
+  }finally{
+    btn.disabled = false;
+    btn.querySelector('.button-text').classList.remove('hidden');
+    btn.querySelector('.spinner').classList.add('hidden');
+  }
 }
 
 // ---------------- View switching ----------------
@@ -493,15 +543,26 @@ async function renderTransactionsHistory(){
 
 // ---------------- Init ----------------
 async function init(){
+  el('fjg-verify-btn').addEventListener('click', verifyForceJoin);
+
   const preloaderDone = runPreloader();
   try{
     await authenticate();
     await loadSettings();
 
-    if (state.user.banned) { showModal('multiAccountModal'); return; }
+    if (state.user.banned) { await preloaderDone; hidePreloader(); showModal('multiAccountModal'); return; }
+
+    const gate = await fetchForceJoinGate();
 
     await preloaderDone;
     hidePreloader();
+
+    if (gate.blocked) {
+      showForceJoinGate(gate.channels);
+      return;
+    }
+
+    revealApp();
     await bootApp();
   }catch(e){
     console.error(e);
