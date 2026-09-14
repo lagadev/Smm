@@ -1,5 +1,5 @@
 // =====================================================
-// Admin panel logic (v9) - Amar SMM
+// Admin panel logic (v10) - Amar SMM
 // =====================================================
 const API_BASE = window.location.origin;
 
@@ -9,7 +9,7 @@ function money(n){ return (Number(n)||0).toFixed(2); }
 function money8(n){ return (Number(n)||0).toFixed(8); }
 
 let ADMIN_PASSWORD = sessionStorage.getItem('tg_admin_pw') || '';
-let cache = { platforms: [], categories: [], services: [], settings: {} };
+let cache = { platforms: [], categories: [], services: [], settings: {}, forcejoin: [] };
 
 async function api(path, opts = {}) {
   const headers = { "Content-Type": "application/json", "X-Admin-Password": ADMIN_PASSWORD, ...(opts.headers || {}) };
@@ -48,6 +48,7 @@ function logout(){
 async function enterShell(){
   el('admin-login').classList.add('hidden');
   el('admin-shell').classList.remove('hidden');
+  await loadSettings(); // populate all set-* fields early so saving from any tab never blanks unset ones
   await loadDashboard();
 }
 
@@ -60,6 +61,7 @@ const TAB_TITLES = {
   orders: ['Orders', 'Review and update customer orders'],
   users: ['Users', 'Manage user balances and access'],
   deposits: ['Deposits', 'Automatic, webhook-verified payment log (read-only)'],
+  forcejoin: ['Force Join', 'Require users to join channels before unlocking the app'],
   settings: ['Settings', 'Configure bot, gateway, referral and provider'],
 };
 
@@ -76,6 +78,7 @@ function switchTab(tab){
   if (tab === 'orders') loadOrders();
   if (tab === 'users') loadUsers();
   if (tab === 'deposits') loadDeposits();
+  if (tab === 'forcejoin') loadForceJoin();
   if (tab === 'settings') loadSettings();
 }
 function showModal(id){ el(id).style.display = 'flex'; }
@@ -522,6 +525,70 @@ function renderDepositsTable(){
     </tr>`).join('') || `<tr><td colspan="5" style="text-align:center;color:var(--text-dim);">No deposits found</td></tr>`;
 }
 
+// ---------------- Force Join channels ----------------
+async function loadForceJoin(){
+  const { channels } = await api('/api/admin/force-join');
+  cache.forcejoin = channels;
+  const tbody = document.querySelector('#forcejoin-table tbody');
+  tbody.innerHTML = channels.map(c => `
+    <tr>
+      <td>${c.id}</td>
+      <td>${escapeHTML(c.name)}</td>
+      <td>${c.chat_id ? `<code>${escapeHTML(c.chat_id)}</code>` : '<span class="text-dim">— not verified —</span>'}</td>
+      <td><a href="${escapeHTML(c.join_link)}" target="_blank" style="color:var(--primary);">${escapeHTML(c.join_link)}</a></td>
+      <td>${c.sort_order}</td>
+      <td><span class="badge ${c.status === 'active' ? 'active' : 'inactive'}">${c.status}</span></td>
+      <td class="actions">
+        <button class="btn btn-sm btn-ghost" onclick="editForceJoin(${c.id})"><i class="fa-solid fa-pen"></i></button>
+        <button class="btn btn-sm btn-ghost" onclick="deleteForceJoin(${c.id})" style="color:var(--danger);"><i class="fa-solid fa-trash"></i></button>
+      </td>
+    </tr>`).join('') || `<tr><td colspan="7" style="text-align:center;color:var(--text-dim);">No channels yet</td></tr>`;
+}
+function openAddForceJoin(){
+  el('forcejoin-modal-title').textContent = 'Add Channel';
+  el('forcejoin-id').value = '';
+  el('forcejoin-name').value = '';
+  el('forcejoin-link').value = '';
+  el('forcejoin-chatid').value = '';
+  el('forcejoin-sort').value = 0;
+  el('forcejoin-status').value = 'active';
+  showModal('forceJoinModal');
+}
+function editForceJoin(id){
+  const c = cache.forcejoin.find(x => x.id === id);
+  if (!c) return;
+  el('forcejoin-modal-title').textContent = 'Edit Channel';
+  el('forcejoin-id').value = c.id;
+  el('forcejoin-name').value = c.name;
+  el('forcejoin-link').value = c.join_link;
+  el('forcejoin-chatid').value = c.chat_id || '';
+  el('forcejoin-sort').value = c.sort_order;
+  el('forcejoin-status').value = c.status;
+  showModal('forceJoinModal');
+}
+async function saveForceJoin(){
+  const id = el('forcejoin-id').value;
+  const payload = {
+    name: el('forcejoin-name').value.trim(),
+    join_link: el('forcejoin-link').value.trim(),
+    chat_id: el('forcejoin-chatid').value.trim() || null,
+    sort_order: parseInt(el('forcejoin-sort').value, 10) || 0,
+    status: el('forcejoin-status').value,
+  };
+  if (!payload.name || !payload.join_link) return alert('Name and Join Link are required');
+  try{
+    if (id) await api(`/api/admin/force-join/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+    else await api('/api/admin/force-join', { method: 'POST', body: JSON.stringify(payload) });
+    closeModal('forceJoinModal');
+    loadForceJoin();
+  }catch(e){ alert(e.message); }
+}
+async function deleteForceJoin(id){
+  if (!confirm('Delete this channel from the force-join gate?')) return;
+  try{ await api(`/api/admin/force-join/${id}`, { method: 'DELETE' }); loadForceJoin(); }
+  catch(e){ alert(e.message); }
+}
+
 // ---------------- Settings ----------------
 async function loadSettings(){
   const { settings } = await api('/api/admin/settings');
@@ -533,6 +600,7 @@ async function saveSettings(){
                 'default_markup_percent','deposit_quick_amounts',
                 'gateway_api_url','gateway_api_key','site_url',
                 'bot_username','referral_bonus_percent',
+                'force_join_enabled',
                 'provider_auto_order','provider_api_url','provider_api_key',
                 'admin_password'];
   const payload = {};
@@ -592,6 +660,10 @@ document.addEventListener('DOMContentLoaded', () => {
       loadDeposits();
     });
   });
+
+  el('add-forcejoin-btn').addEventListener('click', openAddForceJoin);
+  el('save-forcejoin-btn').addEventListener('click', saveForceJoin);
+  el('save-forcejoin-toggle-btn').addEventListener('click', saveSettings);
 
   el('save-settings-btn').addEventListener('click', saveSettings);
 
