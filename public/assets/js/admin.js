@@ -1,5 +1,5 @@
 // =====================================================
-// Admin panel logic (v8)
+// Admin panel logic (v9) - Amar SMM
 // =====================================================
 const API_BASE = window.location.origin;
 
@@ -9,7 +9,7 @@ function money(n){ return (Number(n)||0).toFixed(2); }
 function money8(n){ return (Number(n)||0).toFixed(8); }
 
 let ADMIN_PASSWORD = sessionStorage.getItem('tg_admin_pw') || '';
-let cache = { platforms: [], categories: [], services: [], settings: {}, methods: [] };
+let cache = { platforms: [], categories: [], services: [], settings: {} };
 
 async function api(path, opts = {}) {
   const headers = { "Content-Type": "application/json", "X-Admin-Password": ADMIN_PASSWORD, ...(opts.headers || {}) };
@@ -59,9 +59,8 @@ const TAB_TITLES = {
   services: ['Services', 'Manage the services users can order'],
   orders: ['Orders', 'Review and update customer orders'],
   users: ['Users', 'Manage user balances and access'],
-  methods: ['Payment Methods', 'Where users send money to top up their wallet'],
-  deposits: ['Deposits', 'Approve or reject incoming deposit requests'],
-  settings: ['Settings', 'Configure bot, markup, funds and provider'],
+  deposits: ['Deposits', 'Automatic, webhook-verified payment log (read-only)'],
+  settings: ['Settings', 'Configure bot, gateway, referral and provider'],
 };
 
 function switchTab(tab){
@@ -76,7 +75,6 @@ function switchTab(tab){
   if (tab === 'services') loadServices();
   if (tab === 'orders') loadOrders();
   if (tab === 'users') loadUsers();
-  if (tab === 'methods') loadMethods();
   if (tab === 'deposits') loadDeposits();
   if (tab === 'settings') loadSettings();
 }
@@ -498,73 +496,7 @@ async function toggleBan(id, banned){
   catch(e){ alert(e.message); }
 }
 
-// ---------------- Payment Methods ----------------
-async function loadMethods(){
-  const { methods } = await api('/api/admin/payment-methods');
-  cache.methods = methods;
-  const tbody = document.querySelector('#methods-table tbody');
-  tbody.innerHTML = methods.map(m => `
-    <tr>
-      <td>${m.id}</td>
-      <td><i class="${escapeHTML(m.icon || '')}"></i></td>
-      <td>${escapeHTML(m.name)}</td>
-      <td>${m.sort_order}</td>
-      <td><span class="badge ${m.status === 'active' ? 'active' : 'inactive'}">${m.status}</span></td>
-      <td class="actions">
-        <button class="btn btn-sm btn-ghost" onclick="editMethod(${m.id})"><i class="fa-solid fa-pen"></i></button>
-        <button class="btn btn-sm btn-ghost" onclick="deleteMethod(${m.id})" style="color:var(--danger);"><i class="fa-solid fa-trash"></i></button>
-      </td>
-    </tr>`).join('') || `<tr><td colspan="6" style="text-align:center;color:var(--text-dim);">No payment methods yet</td></tr>`;
-}
-function openAddMethod(){
-  el('method-modal-title').textContent = 'Add Payment Method';
-  el('method-id').value = '';
-  el('method-name').value = '';
-  el('method-icon').value = 'fa-solid fa-wallet';
-  el('method-account').value = '';
-  el('method-instructions').value = '';
-  el('method-sort').value = 0;
-  el('method-status').value = 'active';
-  showModal('methodModal');
-}
-function editMethod(id){
-  const m = cache.methods.find(x => x.id === id);
-  if (!m) return;
-  el('method-modal-title').textContent = 'Edit Payment Method';
-  el('method-id').value = m.id;
-  el('method-name').value = m.name;
-  el('method-icon').value = m.icon || '';
-  el('method-account').value = m.account_info || '';
-  el('method-instructions').value = m.instructions || '';
-  el('method-sort').value = m.sort_order;
-  el('method-status').value = m.status;
-  showModal('methodModal');
-}
-async function saveMethod(){
-  const id = el('method-id').value;
-  const payload = {
-    name: el('method-name').value.trim(),
-    icon: el('method-icon').value.trim() || 'fa-solid fa-wallet',
-    account_info: el('method-account').value.trim() || null,
-    instructions: el('method-instructions').value.trim() || null,
-    sort_order: parseInt(el('method-sort').value, 10) || 0,
-    status: el('method-status').value,
-  };
-  if (!payload.name) return alert('Name is required');
-  try{
-    if (id) await api(`/api/admin/payment-methods/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
-    else await api('/api/admin/payment-methods', { method: 'POST', body: JSON.stringify(payload) });
-    closeModal('methodModal');
-    loadMethods();
-  }catch(e){ alert(e.message); }
-}
-async function deleteMethod(id){
-  if (!confirm('Delete this payment method?')) return;
-  try{ await api(`/api/admin/payment-methods/${id}`, { method: 'DELETE' }); loadMethods(); }
-  catch(e){ alert(e.message); }
-}
-
-// ---------------- Deposits ----------------
+// ---------------- Deposits — automatic, webhook-verified log (read-only) ----------------
 let depositStatusFilter = '';
 async function loadDeposits(){
   const { deposits } = await api('/api/admin/deposits' + (depositStatusFilter ? `?status=${depositStatusFilter}` : ''));
@@ -584,31 +516,10 @@ function renderDepositsTable(){
     <tr>
       <td><code>${escapeHTML(d.reference_code)}</code></td>
       <td>${escapeHTML(d.first_name)} · ${escapeHTML(d.telegram_id)}</td>
-      <td>${escapeHTML(d.method_name)}</td>
       <td>৳${money(d.amount)}</td>
       <td>${statusPill(d.status)}</td>
-      <td>${new Date(d.created_at).toLocaleString()}</td>
-      <td class="actions">
-        ${d.status === 'Pending' ? `<button class="btn btn-sm btn-ghost" onclick="openDepositModal(${d.id})"><i class="fa-solid fa-magnifying-glass"></i> Review</button>` : `<span class="text-dim" style="font-size:12px;">${escapeHTML(d.admin_note || '')}</span>`}
-      </td>
-    </tr>`).join('') || `<tr><td colspan="7" style="text-align:center;color:var(--text-dim);">No deposit requests found</td></tr>`;
-}
-function openDepositModal(id){
-  const d = cache.deposits.find(x => x.id === id);
-  if (!d) return;
-  el('deposit-id').value = id;
-  el('deposit-summary').textContent = `${d.first_name} (${d.telegram_id}) wants to deposit ৳${money(d.amount)} via ${d.method_name}. Reference: ${d.reference_code}`;
-  el('deposit-note').value = '';
-  showModal('depositModal');
-}
-async function reviewDeposit(status){
-  const id = el('deposit-id').value;
-  try{
-    await api(`/api/admin/deposits/${id}`, { method: 'PUT', body: JSON.stringify({ status, admin_note: el('deposit-note').value.trim() }) });
-    closeModal('depositModal');
-    loadDeposits();
-    loadDashboard();
-  }catch(e){ alert(e.message); }
+      <td>${new Date(d.updated_at || d.created_at).toLocaleString()}</td>
+    </tr>`).join('') || `<tr><td colspan="5" style="text-align:center;color:var(--text-dim);">No deposits found</td></tr>`;
 }
 
 // ---------------- Settings ----------------
@@ -620,6 +531,8 @@ async function loadSettings(){
 async function saveSettings(){
   const keys = ['site_name','currency_symbol','currency','bot_token','channel_link','support_link',
                 'default_markup_percent','deposit_quick_amounts',
+                'gateway_api_url','gateway_api_key','site_url',
+                'bot_username','referral_bonus_percent',
                 'provider_auto_order','provider_api_url','provider_api_key',
                 'admin_password'];
   const payload = {};
@@ -670,9 +583,6 @@ document.addEventListener('DOMContentLoaded', () => {
   el('user-search').addEventListener('input', debounce(loadUsers, 350));
   el('save-balance-btn').addEventListener('click', saveBalanceAdjust);
 
-  el('add-method-btn').addEventListener('click', openAddMethod);
-  el('save-method-btn').addEventListener('click', saveMethod);
-
   el('deposit-search').addEventListener('input', renderDepositsTable);
   document.querySelectorAll('#deposit-status-pills .pill').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -682,8 +592,6 @@ document.addEventListener('DOMContentLoaded', () => {
       loadDeposits();
     });
   });
-  el('approve-deposit-btn').addEventListener('click', () => reviewDeposit('Approved'));
-  el('reject-deposit-btn').addEventListener('click', () => reviewDeposit('Rejected'));
 
   el('save-settings-btn').addEventListener('click', saveSettings);
 
