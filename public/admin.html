@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Amar SMM — Admin</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="assets/css/style.css?v=10">
+<link rel="stylesheet" href="assets/css/style.css?v=11">
 </head>
 <body class="admin-body">
 
@@ -195,14 +195,13 @@
       </div>
 
       <div class="panel">
-        <div class="panel-head"><h3 style="margin:0;">Automatic Payment Gateway</h3></div>
-        <p class="card-sub" style="margin-top:-8px;">Add Funds is fully automatic — a customer enters an amount, is redirected to your gateway, and the gateway's webhook credits their wallet the instant payment is verified. No manual approval needed.</p>
+        <div class="panel-head"><h3 style="margin:0;">UglyPay — Automatic Payment Gateway</h3></div>
+        <p class="card-sub" style="margin-top:-8px;">Add Funds is fully automatic — a customer enters an amount, is redirected to UglyPay, and UglyPay's webhook credits their wallet the instant payment is verified. No manual approval needed.</p>
         <div class="form-grid">
-          <div class="full"><label>Gateway API URL</label><input class="field" id="set-gateway_api_url" placeholder="https://uglypay.devugly.workers.dev/api/invoices"></div>
-          <div class="full"><label>Gateway API Key (also used to verify webhook signatures)</label><input class="field" id="set-gateway_api_key" type="password"></div>
-          <div class="full"><label>Site URL (used to build the webhook callback — leave blank to auto-detect)</label><input class="field" id="set-site_url" placeholder="https://yoursite.com"></div>
+          <div class="full"><label>Payment API URL</label><input class="field" id="set-payment_api_url" placeholder="https://uglypay.devugly.workers.dev/api/invoices"></div>
+          <div class="full"><label>Payment API Key (also used to verify webhook signatures)</label><input class="field" id="set-payment_api_key" type="password"></div>
         </div>
-        <p class="card-sub" style="margin:10px 0 0;">Point your gateway's webhook at: <code>&lt;Site URL&gt;/api/webhook/gateway</code></p>
+        <p class="card-sub" style="margin:10px 0 0;">Webhook URL is built automatically as: <code>&lt;your-worker-domain&gt;/api/webhook/uglypay</code> — nothing to configure on UglyPay's side beyond your API key.</p>
       </div>
 
       <div class="panel">
