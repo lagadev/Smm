@@ -11,13 +11,7 @@
     {
       "binding": "DB",
       "database_name": "smm-api-center-db",
-      "database_id": "4e4161fc-34a7-42f6-b6a9-ff311b040bf8"
-    }
-  ],
-  "services": [
-    {
-      "binding": "AMARSMM",
-      "service": "uglypay"
+      "database_id": "291fef5d-346e-4917-8eb2-1541d95a2f4c"
     }
   ],
   "triggers": {
