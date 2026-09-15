@@ -43,6 +43,11 @@
  *
  * Cron (wrangler.jsonc triggers.crons): "* * * * *" — syncs Processing orders
  * and pending refills from the provider every minute.
+ *
+ * PAYMENT GATEWAY — Service Binding (recommended, avoids public-internet routing
+ * errors like HTTP 404/1042): add this to wrangler.jsonc and redeploy —
+ *   "services": [ { "binding": "PAYLINK", "service": "<uglypay-worker-name>" } ]
+ * If the binding isn't present, createGatewayInvoice() falls back to a normal fetch().
  */
 
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
@@ -190,18 +195,23 @@ function mapProviderStatus(providerStatus) {
   return null;
 }
 // ---------- Auto payment gateway (UglyPay) ----------
-async function createGatewayInvoice(db, amount, reference, callbackUrl) {
+async function createGatewayInvoice(env, db, amount, reference, callbackUrl) {
   const apiUrl = (await getSetting(db, "payment_api_url")) || "https://uglypay.devugly.workers.dev/api/invoices";
   const apiKey = await getSetting(db, "payment_api_key");
   if (!apiKey) return { error: "Payment gateway is not configured yet. Ask the admin to set the Payment API Key in Settings." };
 
   let res, raw;
   try {
-    res = await fetch(apiUrl, {
+    const requestInit = {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
       body: JSON.stringify({ amount, reference, callbackUrl }),
-    });
+    };
+    // Prefer the Service Binding (env.PAYLINK) when configured — Worker-to-Worker calls never
+    // leave Cloudflare's network, so they can't hit routing errors like HTTP 404/1042.
+    res = env && env.PAYLINK
+      ? await env.PAYLINK.fetch(apiUrl, requestInit)
+      : await fetch(apiUrl, requestInit);
     raw = await res.text();
   } catch (e) {
     return { error: `Could not reach the payment gateway: ${e.message}` };
@@ -561,7 +571,7 @@ async function handleApi(request, env, url, pathname, ctx) {
     do { refCode = genRefCode(); tries++; } while (tries < 5 && await db.prepare("SELECT id FROM deposit_requests WHERE reference_code = ?").bind(refCode).first());
 
     const callbackUrl = `${url.origin}/api/webhook/uglypay`;
-    const invoice = await createGatewayInvoice(db, amount, refCode, callbackUrl);
+    const invoice = await createGatewayInvoice(env, db, amount, refCode, callbackUrl);
     if (invoice.error) return err(invoice.error, 502);
 
     const insert = await db.prepare(
