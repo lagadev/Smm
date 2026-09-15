@@ -598,7 +598,7 @@ async function loadSettings(){
 async function saveSettings(){
   const keys = ['site_name','currency_symbol','currency','bot_token','channel_link','support_link',
                 'default_markup_percent','deposit_quick_amounts',
-                'gateway_api_url','gateway_api_key','site_url',
+                'payment_api_url','payment_api_key',
                 'bot_username','referral_bonus_percent',
                 'force_join_enabled',
                 'provider_auto_order','provider_api_url','provider_api_key',
