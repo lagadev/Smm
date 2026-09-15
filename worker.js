@@ -23,7 +23,7 @@
  *   GET  /api/force-join/verify?telegram_id=                       -> { ok, missing }
  *   POST /api/deposit/request             { telegram_id, amount }  -> auto-creates a gateway invoice, returns pay_url
  *   GET  /api/deposit/requests?telegram_id=                        -> only ever returns webhook-confirmed (Approved) deposits
- *   POST /api/webhook/gateway                                      -> payment gateway calls this to auto-credit balance
+ *   POST /api/webhook/uglypay                                      -> UglyPay calls this to auto-credit balance
  *
  * Reseller / child API (see in-app Docs):
  *   POST /api/v2   { key, action: services|add|status|refill|refill_status|cancel|balance, ... }
@@ -71,6 +71,15 @@ function genRefCode() {
   const bytes = crypto.getRandomValues(new Uint8Array(8));
   for (const b of bytes) s += chars[b % chars.length];
   return `DEP-${s}`;
+}
+function toHex(buf) {
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+function timingSafeEqual(a, b) {
+  if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) return false;
+  let out = 0;
+  for (let i = 0; i < a.length; i++) out |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return out === 0;
 }
 function parseIdList(raw) {
   return String(raw || "").split(",").map((s) => s.trim()).filter(Boolean).slice(0, 100);
@@ -180,11 +189,11 @@ function mapProviderStatus(providerStatus) {
   if (s.includes("process") || s.includes("in progress")) return "Processing";
   return null;
 }
-// ---------- Auto payment gateway (UglyPay/PayLink) ----------
+// ---------- Auto payment gateway (UglyPay) ----------
 async function createGatewayInvoice(db, amount, reference, callbackUrl) {
-  const apiUrl = (await getSetting(db, "gateway_api_url")) || "https://uglypay.devugly.workers.dev/api/invoices";
-  const apiKey = await getSetting(db, "gateway_api_key");
-  if (!apiKey) return { error: "Payment gateway is not configured yet. Ask the admin to set the Gateway API Key in Settings." };
+  const apiUrl = (await getSetting(db, "payment_api_url")) || "https://uglypay.devugly.workers.dev/api/invoices";
+  const apiKey = await getSetting(db, "payment_api_key");
+  if (!apiKey) return { error: "Payment gateway is not configured yet. Ask the admin to set the Payment API Key in Settings." };
 
   let res, raw;
   try {
@@ -538,7 +547,7 @@ async function handleApi(request, env, url, pathname, ctx) {
     return json({ ok: true, transactions: results });
   }
 
-  // ---------- Deposits (Add Funds) — fully automatic via payment gateway ----------
+  // ---------- Deposits (Add Funds) — fully automatic via UglyPay ----------
   if (pathname === "/api/deposit/request" && method === "POST") {
     const body = await request.json().catch(() => ({}));
     if (!body.telegram_id || !body.amount) return err("telegram_id and amount required");
@@ -551,17 +560,16 @@ async function handleApi(request, env, url, pathname, ctx) {
     let refCode, tries = 0;
     do { refCode = genRefCode(); tries++; } while (tries < 5 && await db.prepare("SELECT id FROM deposit_requests WHERE reference_code = ?").bind(refCode).first());
 
-    const siteUrl = await getSetting(db, "site_url");
-    const callbackUrl = `${(siteUrl || url.origin).replace(/\/$/, "")}/api/webhook/gateway`;
+    const callbackUrl = `${url.origin}/api/webhook/uglypay`;
     const invoice = await createGatewayInvoice(db, amount, refCode, callbackUrl);
     if (invoice.error) return err(invoice.error, 502);
 
     const insert = await db.prepare(
-      "INSERT INTO deposit_requests (user_id, method_id, method_name, amount, reference_code, status, provider_invoice_id) VALUES (?, NULL, 'Auto Gateway', ?, ?, 'Pending', ?)"
-    ).bind(user.id, amount, refCode, invoice.invoiceId).run();
+      "INSERT INTO deposit_requests (user_id, amount, reference_code, provider_invoice_id, pay_url, status) VALUES (?, ?, ?, ?, ?, 'Pending')"
+    ).bind(user.id, amount, refCode, invoice.invoiceId, invoice.payUrl).run();
 
     const request_row = await db.prepare("SELECT * FROM deposit_requests WHERE id = ?").bind(insert.meta.last_row_id).first();
-    return json({ ok: true, request: request_row, pay_url: invoice.payUrl });
+    return json({ ok: true, request: request_row, reference_code: refCode, pay_url: invoice.payUrl });
   }
 
   // Only ever returns webhook-confirmed (Approved) deposits — nothing stuck in Pending is shown.
@@ -576,18 +584,20 @@ async function handleApi(request, env, url, pathname, ctx) {
     return json({ ok: true, requests: results });
   }
 
-  // Gateway webhook — auto-credits balance the instant a payment is verified. No admin action needed.
-  if (pathname === "/api/webhook/gateway" && method === "POST") {
+  // UglyPay webhook — PUBLIC route, no admin/session auth. Auto-credits balance the instant a
+  // payment is verified, using a timing-safe HMAC-SHA256 signature check. No admin action needed.
+  if (pathname === "/api/webhook/uglypay" && method === "POST") {
     const rawBody = await request.text();
     const signature = request.headers.get("x-signature") || "";
-    const gatewayKey = await getSetting(db, "gateway_api_key");
-    if (!gatewayKey) return err("Gateway not configured", 500);
+    const apiKey = await getSetting(db, "payment_api_key");
+    if (!apiKey) return err("Payment gateway not configured", 400);
 
-    const enc = new TextEncoder();
-    const hmacKey = await crypto.subtle.importKey("raw", enc.encode(gatewayKey), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-    const sigBytes = await crypto.subtle.sign("HMAC", hmacKey, enc.encode(rawBody));
-    const expectedSig = [...new Uint8Array(sigBytes)].map((b) => b.toString(16).padStart(2, "0")).join("");
-    if (signature !== expectedSig) return err("Invalid signature", 401);
+    const keyMaterial = await crypto.subtle.importKey(
+      "raw", new TextEncoder().encode(apiKey), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+    );
+    const sigBytes = await crypto.subtle.sign("HMAC", keyMaterial, new TextEncoder().encode(rawBody));
+    const expected = toHex(sigBytes);
+    if (!signature || !timingSafeEqual(signature, expected)) return err("Invalid signature", 401);
 
     let payload;
     try { payload = JSON.parse(rawBody); } catch { return err("Invalid payload", 400); }
@@ -599,12 +609,12 @@ async function handleApi(request, env, url, pathname, ctx) {
     if (!dep) return err("Unknown reference", 404);
     if (dep.status === "Approved") return json({ ok: true }); // idempotent — already credited
 
-    const creditAmount = netAmount != null ? parseFloat(netAmount) : parseFloat(amount);
+    const creditAmount = Number(netAmount != null ? netAmount : amount) || dep.amount;
     if (!Number.isFinite(creditAmount) || creditAmount <= 0) return err("Invalid amount in webhook payload", 400);
 
     await db.prepare("UPDATE users SET balance = balance + ? WHERE id = ?").bind(creditAmount, dep.user_id).run();
     await db.prepare("INSERT INTO transactions (user_id, type, amount, note) VALUES (?, 'deposit', ?, ?)")
-      .bind(dep.user_id, creditAmount, `Deposit ${dep.reference_code} via Auto Gateway${trxId ? ` (trx: ${trxId})` : ""}`).run();
+      .bind(dep.user_id, creditAmount, `Deposit ${dep.reference_code} via UglyPay${trxId ? ` (trx: ${trxId})` : ""}`).run();
     await db.prepare("UPDATE deposit_requests SET status = 'Approved', admin_note = ?, updated_at = datetime('now') WHERE id = ?")
       .bind(trxId ? `Auto-verified · trx ${trxId}` : "Auto-verified", dep.id).run();
 
@@ -1018,7 +1028,7 @@ async function handleAdmin(db, env, method, pathname, request, url) {
     if (b.status === "Approved") {
       await db.prepare("UPDATE users SET balance = balance + ? WHERE id = ?").bind(dep.amount, dep.user_id).run();
       await db.prepare("INSERT INTO transactions (user_id, type, amount, note) VALUES (?, 'deposit', ?, ?)")
-        .bind(dep.user_id, dep.amount, `Deposit ${dep.reference_code} via ${dep.method_name}`).run();
+        .bind(dep.user_id, dep.amount, `Deposit ${dep.reference_code} via manual admin override`).run();
     }
     await db.prepare("UPDATE deposit_requests SET status = ?, admin_note = ?, updated_at = datetime('now') WHERE id = ?")
       .bind(b.status, b.admin_note || null, m[1]).run();
