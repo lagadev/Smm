@@ -14,6 +14,12 @@
       "database_id": "4e4161fc-34a7-42f6-b6a9-ff311b040bf8"
     }
   ],
+  "services": [
+    {
+      "binding": "AMARSMM",
+      "service": "uglypay"
+    }
+  ],
   "triggers": {
     "crons": ["* * * * *"]
   },
