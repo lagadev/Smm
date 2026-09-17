@@ -226,7 +226,7 @@ button{ font-family:inherit; }
 .token-row{ display:flex; align-items:center; gap:10px; background:var(--surface-2); border:1px solid var(--border); border-radius:12px; padding:12px 14px; margin:12px 0; }
 .token-row code{ flex:1; font-size:13px; letter-spacing:.02em; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .token-actions{ display:flex; gap:8px; }
-.fab-card{ display:flex; align-items:center; gap:14px; width:100%; text-align:left; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:16px 18px; margin-bottom:16px; cursor:pointer; transition:border-color .15s ease; }
+.fab-card{ display:flex; align-items:center; gap:14px; width:100%; text-align:left; text-decoration:none; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:16px 18px; margin-bottom:16px; cursor:pointer; transition:border-color .15s ease; }
 .fab-card:hover{ border-color:var(--primary); }
 .fab-icon{ width:42px; height:42px; border-radius:12px; background:var(--primary-tint); color:var(--primary); display:flex; align-items:center; justify-content:center; font-size:17px; flex:0 0 auto; }
 .fab-title{ font-weight:700; font-size:14.5px; }
