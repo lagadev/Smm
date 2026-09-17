@@ -511,7 +511,7 @@ function renderDepositsTable(){
   let deposits = cache.deposits || [];
   if (q) deposits = deposits.filter(d => d.reference_code.toLowerCase().includes(q) || (d.username || '').toLowerCase().includes(q) || d.telegram_id.includes(q));
   const statusPill = (status) => {
-    const map = { Pending: 'status-pending', Approved: 'status-approved', Rejected: 'status-rejected' };
+    const map = { Pending: 'status-pending', Approved: 'status-approved', Expired: 'status-cancelled', Cancelled: 'status-cancelled', Rejected: 'status-rejected' };
     return `<span class="order-status-pill ${map[status] || ''}">${escapeHTML(status)}</span>`;
   };
   const tbody = document.querySelector('#deposits-table tbody');
@@ -598,7 +598,7 @@ async function loadSettings(){
 async function saveSettings(){
   const keys = ['site_name','currency_symbol','currency','bot_token','channel_link','support_link',
                 'default_markup_percent','deposit_quick_amounts',
-                'payment_api_url','payment_api_key',
+                'payment_api_url','payment_api_key','deposit_expiry_minutes',
                 'bot_username','referral_bonus_percent',
                 'force_join_enabled',
                 'provider_auto_order','provider_api_url','provider_api_key',
