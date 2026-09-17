@@ -157,6 +157,14 @@ async function loadSettings() {
   const siteName = settings.site_name || 'Amar SMM';
   document.title = siteName;
   el('brand-name-text').textContent = siteName;
+
+  const hasChannel = !!settings.channel_link;
+  const hasSupport = !!settings.support_link;
+  el('help-channel-link').href = settings.channel_link || '#';
+  el('help-channel-link').classList.toggle('hidden', !hasChannel);
+  el('help-support-link').href = settings.support_link || '#';
+  el('help-support-link').classList.toggle('hidden', !hasSupport);
+  el('help-card').classList.toggle('hidden', !hasChannel && !hasSupport);
 }
 
 // ---------------- Home ----------------
@@ -407,8 +415,10 @@ async function payNow(){
       body: JSON.stringify({ telegram_id: state.user.telegram_id, amount: state.fundsAmount }),
     });
     haptic('success');
-    if (tg && tg.openLink) tg.openLink(pay_url);
-    else window.location.href = pay_url;
+    // Direct navigation (not tg.openLink) keeps the checkout inside the Mini App's own WebView
+    // instead of popping out to an external browser tab. pay-return.html sends the customer
+    // straight back into the app once the payment finishes, expires, or is cancelled.
+    window.location.href = pay_url;
   }catch(e){
     haptic('error');
     safeAlert(e.message);
@@ -423,8 +433,9 @@ async function renderDepositRequests(){
   try{
     const { requests } = await api(`/api/deposit/requests?telegram_id=${state.user.telegram_id}`);
     const wrap = el('deposit-requests-list');
-    if (!requests.length){ wrap.innerHTML = emptyState('fa-sack-dollar', 'No successful payments yet'); return; }
+    if (!requests.length){ wrap.innerHTML = emptyState('fa-sack-dollar', 'No deposits yet'); return; }
     const sym = state.settings.currency_symbol || '৳';
+    const statusClassMap = { Pending: 'pending', Approved: 'approved', Expired: 'cancelled', Cancelled: 'cancelled' };
     wrap.innerHTML = requests.map(r => `
       <div class="history-item">
         <div class="history-details">
@@ -432,8 +443,8 @@ async function renderDepositRequests(){
           <span class="meta">${new Date(r.updated_at || r.created_at).toLocaleString()}</span>
         </div>
         <div class="history-amount">
-          <div class="amt">+${sym}${Number(r.amount).toLocaleString()}</div>
-          <span class="status-badge approved">Approved</span>
+          <div class="amt">${r.status === 'Approved' ? '+' : ''}${sym}${Number(r.amount).toLocaleString()}</div>
+          <span class="status-badge ${statusClassMap[r.status] || 'pending'}">${escapeHTML(r.status)}</span>
         </div>
       </div>`).join('');
   }catch(e){}
