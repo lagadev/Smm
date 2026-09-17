@@ -7,7 +7,7 @@
 
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="assets/css/style.css?v=12">
+<link rel="stylesheet" href="assets/css/style.css?v=13">
 
 <script>
   (function(){
@@ -174,7 +174,7 @@
 
     <div class="card">
       <h3 class="card-title">Payment History</h3>
-      <p class="card-sub" style="margin-top:-8px;">Only successful, verified payments appear here.</p>
+      <p class="card-sub" style="margin-top:-8px;">Shows every deposit attempt — Pending, Approved, Expired or Cancelled.</p>
       <div id="deposit-requests-list"></div>
     </div>
   </section>
@@ -221,6 +221,23 @@
       <div class="ref-stats-row">
         <div class="ref-stat"><div class="ref-stat-value" id="ref-count">0</div><div class="ref-stat-label">Friends Joined</div></div>
         <div class="ref-stat"><div class="ref-stat-value" id="ref-earnings">0.00</div><div class="ref-stat-label">Total Earned</div></div>
+      </div>
+    </div>
+
+    <div class="card hidden" id="help-card">
+      <h3 class="card-title">Need Help?</h3>
+      <p class="card-sub">Stay updated or get in touch with our team.</p>
+      <div class="help-links">
+        <a class="fab-card" id="help-channel-link" href="#" target="_blank" style="margin-bottom:10px;">
+          <div class="fab-icon"><i class="fa-brands fa-telegram"></i></div>
+          <div class="fab-text"><div class="fab-title">Join Our Channel</div><div class="fab-sub">Updates, offers &amp; announcements</div></div>
+          <i class="fa-solid fa-chevron-right text-dim"></i>
+        </a>
+        <a class="fab-card" id="help-support-link" href="#" target="_blank" style="margin-bottom:0;">
+          <div class="fab-icon"><i class="fa-solid fa-headset"></i></div>
+          <div class="fab-text"><div class="fab-title">Contact Support</div><div class="fab-sub">We're here to help</div></div>
+          <i class="fa-solid fa-chevron-right text-dim"></i>
+        </a>
       </div>
     </div>
 
