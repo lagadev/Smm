@@ -22,8 +22,11 @@
  *   GET  /api/force-join/status                                    -> { enabled, channels }
  *   GET  /api/force-join/verify?telegram_id=                       -> { ok, missing }
  *   POST /api/deposit/request             { telegram_id, amount }  -> auto-creates a gateway invoice, returns pay_url
- *   GET  /api/deposit/requests?telegram_id=                        -> only ever returns webhook-confirmed (Approved) deposits
+ *   GET  /api/deposit/requests?telegram_id=                        -> full deposit history (Pending/Approved/Expired/Cancelled)
+ *   GET  /api/deposit/status?reference=                            -> cosmetic status check used by pay-return.html
+ *   POST /api/deposit/mark-return          { reference, status }   -> flips a Pending row to Expired/Cancelled (display only)
  *   POST /api/webhook/uglypay                                      -> UglyPay calls this to auto-credit balance
+ *   GET  /pay-return.html                                          -> successUrl/cancelUrl target, hands the customer back into the app
  *
  * Reseller / child API (see in-app Docs):
  *   POST /api/v2   { key, action: services|add|status|refill|refill_status|cancel|balance, ... }
@@ -195,17 +198,20 @@ function mapProviderStatus(providerStatus) {
   return null;
 }
 // ---------- Auto payment gateway (UglyPay) ----------
-async function createGatewayInvoice(env, db, amount, reference, callbackUrl) {
+async function createGatewayInvoice(env, db, amount, reference, callbackUrl, successUrl, cancelUrl) {
   const apiUrl = (await getSetting(db, "payment_api_url")) || "https://uglypay.devugly.workers.dev/api/invoices";
   const apiKey = await getSetting(db, "payment_api_key");
   if (!apiKey) return { error: "Payment gateway is not configured yet. Ask the admin to set the Payment API Key in Settings." };
 
   let res, raw;
   try {
+    const payload = { amount, reference, callbackUrl };
+    if (successUrl) payload.successUrl = successUrl;
+    if (cancelUrl) payload.cancelUrl = cancelUrl;
     const requestInit = {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
-      body: JSON.stringify({ amount, reference, callbackUrl }),
+      body: JSON.stringify(payload),
     };
     // Prefer the Service Binding (env.PAYLINK) when configured — Worker-to-Worker calls never
     // leave Cloudflare's network, so they can't hit routing errors like HTTP 404/1042.
@@ -301,6 +307,10 @@ export default {
       try { return await handleApi(request, env, url, pathname, ctx); }
       catch (e) { return err(`Server error: ${e.message}`, 500); }
     }
+    if (pathname === "/pay-return.html") {
+      try { return await renderPayReturnPage(env.DB); }
+      catch (e) { return new Response(`Error: ${e.message}`, { status: 500 }); }
+    }
     return env.ASSETS.fetch(request);
   },
 
@@ -308,6 +318,103 @@ export default {
     ctx.waitUntil(syncProcessingOrders(env.DB));
   },
 };
+
+// Small standalone page UglyPay redirects the customer's browser back to after checkout.
+// It reads ?status=verified|expired|cancelled&reference=... from its own URL client-side,
+// tells the server about expired/cancelled so the deposit list doesn't look stuck, polls
+// briefly for the webhook-confirmed status, then sends the customer straight back into the
+// Mini App via a t.me deep link.
+async function renderPayReturnPage(db) {
+  const siteName = (await getSetting(db, "site_name")) || "Amar SMM";
+  const botUsername = await getSetting(db, "bot_username");
+  const appLink = botUsername ? `https://t.me/${botUsername}/app` : null;
+
+  const html = `<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${siteName} — Payment Status</title>
+<style>
+  body{ margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;
+    font-family:-apple-system,BlinkMacSystemFont,'Inter',sans-serif; text-align:center;
+    background:radial-gradient(circle at 12% 8%, rgba(129,140,248,.35), transparent 42%),
+               radial-gradient(circle at 88% 15%, rgba(56,189,248,.30), transparent 45%),
+               linear-gradient(160deg, #EEF2FF 0%, #F5F3FF 45%, #ECFEFF 100%); }
+  .card{ background:rgba(255,255,255,.7); backdrop-filter:blur(20px) saturate(180%); border:1px solid rgba(255,255,255,.6);
+    border-radius:22px; padding:36px 28px; max-width:360px; box-shadow:0 8px 32px rgba(31,38,135,.14); }
+  .icon{ width:64px; height:64px; border-radius:18px; margin:0 auto 18px; display:flex; align-items:center; justify-content:center; font-size:28px; }
+  .icon.ok{ background:#ECFDF5; color:#059669; } .icon.bad{ background:#FEF2F2; color:#DC2626; } .icon.wait{ background:#FFFBEB; color:#D97706; }
+  h1{ font-size:19px; margin:0 0 8px; color:#101319; } p{ font-size:13.5px; color:#6B7280; line-height:1.6; margin:0 0 22px; }
+  a.btn{ display:inline-block; width:100%; box-sizing:border-box; padding:14px; border-radius:12px; background:linear-gradient(135deg,#2B8CFF,#0D6EFD);
+    color:#fff; font-weight:700; text-decoration:none; font-size:14.5px; }
+</style>
+</head><body>
+  <div class="card">
+    <div class="icon wait" id="icon">⏳</div>
+    <h1 id="title">Checking your payment…</h1>
+    <p id="sub">এক মুহূর্ত অপেক্ষা করুন — আপনার পেমেন্ট নিশ্চিত করা হচ্ছে।</p>
+    ${appLink ? `<a class="btn" id="cta" href="${appLink}">Return to ${escapeAttr(siteName)}</a>` : `<p style="margin:0;">You can close this tab and return to the app.</p>`}
+  </div>
+<script>
+(function(){
+  var params = new URLSearchParams(window.location.search);
+  var status = params.get('status');
+  var reference = params.get('reference');
+  var icon = document.getElementById('icon');
+  var title = document.getElementById('title');
+  var sub = document.getElementById('sub');
+  var appLink = ${appLink ? JSON.stringify(appLink) : "null"};
+
+  function setState(kind, t, s){
+    icon.className = 'icon ' + kind;
+    icon.textContent = kind === 'ok' ? '✅' : (kind === 'bad' ? '✕' : '⏳');
+    title.textContent = t; sub.textContent = s;
+  }
+
+  function goBack(){ if (appLink) window.location.href = appLink; }
+
+  if (!reference) { setState('bad', 'Something went wrong', 'No reference found — please try again from the app.'); return; }
+
+  if (status === 'cancelled') {
+    setState('bad', 'Payment cancelled', 'You cancelled the payment. No amount was charged.');
+    fetch('/api/deposit/mark-return', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ reference: reference, status: 'cancelled' }) }).catch(function(){});
+    setTimeout(goBack, 2500);
+    return;
+  }
+  if (status === 'expired') {
+    setState('bad', 'Payment link expired', 'This payment link expired before it was completed. Please start a new deposit.');
+    fetch('/api/deposit/mark-return', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ reference: reference, status: 'expired' }) }).catch(function(){});
+    setTimeout(goBack, 2500);
+    return;
+  }
+
+  // status === 'verified' (or unknown) — poll our own status endpoint since the webhook is the
+  // real source of truth and may take a couple of seconds longer than this redirect.
+  var tries = 0;
+  function poll(){
+    tries++;
+    fetch('/api/deposit/status?reference=' + encodeURIComponent(reference))
+      .then(function(r){ return r.json(); })
+      .then(function(data){
+        if (data && data.ok && data.status === 'Approved') {
+          setState('ok', 'Payment received!', 'Your wallet has been credited. Redirecting you back…');
+          setTimeout(goBack, 1800);
+        } else if (tries < 10) {
+          setTimeout(poll, 1500);
+        } else {
+          setState('wait', 'Almost there…', 'Your payment is still being confirmed — check your wallet balance in the app shortly.');
+          setTimeout(goBack, 2500);
+        }
+      })
+      .catch(function(){ if (tries < 10) setTimeout(poll, 1500); });
+  }
+  poll();
+})();
+</script>
+</body></html>`;
+
+  return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+}
+function escapeAttr(s) { return String(s || "").replace(/"/g, "&quot;"); }
 
 // ---------- Cron job: fastest-possible order sync ----------
 async function syncProcessingOrders(db) {
@@ -571,7 +678,11 @@ async function handleApi(request, env, url, pathname, ctx) {
     do { refCode = genRefCode(); tries++; } while (tries < 5 && await db.prepare("SELECT id FROM deposit_requests WHERE reference_code = ?").bind(refCode).first());
 
     const callbackUrl = `${url.origin}/api/webhook/uglypay`;
-    const invoice = await createGatewayInvoice(env, db, amount, refCode, callbackUrl);
+    // successUrl/cancelUrl bring the customer's browser back to a small return page that
+    // shows a friendly status and hands them straight back into the Mini App. UglyPay appends
+    // ?status=verified|expired|cancelled&invoiceId=...&reference=... to whichever one it uses.
+    const returnUrl = `${url.origin}/pay-return.html`;
+    const invoice = await createGatewayInvoice(env, db, amount, refCode, callbackUrl, returnUrl, returnUrl);
     if (invoice.error) return err(invoice.error, 502);
 
     const insert = await db.prepare(
@@ -582,16 +693,51 @@ async function handleApi(request, env, url, pathname, ctx) {
     return json({ ok: true, request: request_row, reference_code: refCode, pay_url: invoice.payUrl });
   }
 
-  // Only ever returns webhook-confirmed (Approved) deposits — nothing stuck in Pending is shown.
+  // Full deposit history for this user — Pending, Approved, Expired and Cancelled all show up
+  // with their real status, so nothing looks like it's silently stuck forever.
   if (pathname === "/api/deposit/requests" && method === "GET") {
     const tid = url.searchParams.get("telegram_id");
     if (!tid) return err("telegram_id required");
     const user = await db.prepare("SELECT id FROM users WHERE telegram_id = ?").bind(tid).first();
     if (!user) return json({ ok: true, requests: [] });
+
+    // Lazy-expire: a Pending row older than the configured window auto-flips to Expired so it
+    // stops looking "stuck" even if the customer never comes back through pay-return.html.
+    const expiryMinutes = parseInt((await getSetting(db, "deposit_expiry_minutes")) || "30", 10) || 30;
+    await db.prepare(
+      `UPDATE deposit_requests SET status = 'Expired', updated_at = datetime('now')
+       WHERE user_id = ? AND status = 'Pending' AND created_at <= datetime('now', ?)`
+    ).bind(user.id, `-${expiryMinutes} minutes`).run();
+
     const { results } = await db.prepare(
-      "SELECT * FROM deposit_requests WHERE user_id = ? AND status = 'Approved' ORDER BY updated_at DESC LIMIT 50"
+      "SELECT * FROM deposit_requests WHERE user_id = ? ORDER BY updated_at DESC LIMIT 50"
     ).bind(user.id).all();
     return json({ ok: true, requests: results });
+  }
+
+  // Cosmetic status check for the pay-return page — lets it poll until the webhook (the real
+  // source of truth for crediting balance) has processed, without exposing anything sensitive.
+  if (pathname === "/api/deposit/status" && method === "GET") {
+    const reference = url.searchParams.get("reference");
+    if (!reference) return err("reference required");
+    const dep = await db.prepare("SELECT status, amount FROM deposit_requests WHERE reference_code = ?").bind(reference).first();
+    if (!dep) return err("Unknown reference", 404);
+    return json({ ok: true, status: dep.status, amount: dep.amount });
+  }
+
+  // Called by pay-return.html with the status UglyPay put in the redirect query string. This
+  // only ever downgrades a still-Pending row to Expired/Cancelled for display purposes — it can
+  // never mark something Approved or touch money; only the signed webhook above can do that.
+  if (pathname === "/api/deposit/mark-return" && method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const reference = body.reference;
+    const status = body.status;
+    if (!reference || !["expired", "cancelled"].includes(status)) return json({ ok: true });
+    const mapped = status === "expired" ? "Expired" : "Cancelled";
+    await db.prepare(
+      "UPDATE deposit_requests SET status = ?, updated_at = datetime('now') WHERE reference_code = ? AND status = 'Pending'"
+    ).bind(mapped, reference).run();
+    return json({ ok: true });
   }
 
   // UglyPay webhook — PUBLIC route, no admin/session auth. Auto-credits balance the instant a
