@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Amar SMM — Admin</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="assets/css/style.css?v=12">
+<link rel="stylesheet" href="assets/css/style.css?v=13">
 </head>
 <body class="admin-body">
 
@@ -135,9 +135,11 @@
         <div class="pill-row" id="deposit-status-pills">
           <button class="pill active" data-status=""><i class="fa-solid fa-list"></i> All</button>
           <button class="pill" data-status="Approved"><i class="fa-solid fa-check"></i> Approved</button>
-          <button class="pill" data-status="Pending"><i class="fa-solid fa-clock"></i> Pending / Unpaid</button>
+          <button class="pill" data-status="Pending"><i class="fa-solid fa-clock"></i> Pending</button>
+          <button class="pill" data-status="Expired"><i class="fa-solid fa-hourglass-end"></i> Expired</button>
+          <button class="pill" data-status="Cancelled"><i class="fa-solid fa-xmark"></i> Cancelled</button>
         </div>
-        <p class="card-sub" style="margin-top:-6px;">Fully automatic — the payment gateway's webhook verifies each payment and credits the wallet instantly. This log is read-only. Rows staying "Pending" simply mean the customer never completed payment at the gateway; nothing needs action here.</p>
+        <p class="card-sub" style="margin-top:-6px;">Fully automatic — UglyPay's webhook verifies each payment and credits the wallet instantly. This log is read-only. A Pending row auto-flips to Expired after the configured window (Settings → UglyPay) if the customer never completes payment; Cancelled means they backed out at checkout.</p>
         <div class="table-wrap"><table class="admin-table" id="deposits-table"><thead><tr><th>Ref Code</th><th>User</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody></tbody></table></div>
       </div>
     </section>
@@ -200,8 +202,9 @@
         <div class="form-grid">
           <div class="full"><label>Payment API URL</label><input class="field" id="set-payment_api_url" placeholder="https://uglypay.devugly.workers.dev/api/invoices"></div>
           <div class="full"><label>Payment API Key (also used to verify webhook signatures)</label><input class="field" id="set-payment_api_key" type="password"></div>
+          <div><label>Deposit Expiry (minutes)</label><input class="field" id="set-deposit_expiry_minutes" type="number" min="1" placeholder="30"></div>
         </div>
-        <p class="card-sub" style="margin:10px 0 0;">Webhook URL is built automatically as: <code>&lt;your-worker-domain&gt;/api/webhook/uglypay</code> — nothing to configure on UglyPay's side beyond your API key.</p>
+        <p class="card-sub" style="margin:10px 0 0;">Webhook URL is built automatically as: <code>&lt;your-worker-domain&gt;/api/webhook/uglypay</code> — nothing to configure on UglyPay's side beyond your API key. A Pending deposit older than the expiry window auto-shows as Expired to the customer.</p>
       </div>
 
       <div class="panel">
